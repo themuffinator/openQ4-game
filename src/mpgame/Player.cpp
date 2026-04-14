@@ -94,6 +94,18 @@ static int Player_GetCorpseRemoveDelayMS( void ) {
 	return 1000;
 }
 
+static int Player_GetCorpseSinkMode( void ) {
+	return idMath::ClampInt( 0, 2, g_corpseSink.GetInteger() );
+}
+
+static bool Player_UseCorpseSink( void ) {
+	return Player_GetCorpseSinkMode() != 0;
+}
+
+static bool Player_UseCorpseSinkNoRagdoll( void ) {
+	return Player_GetCorpseSinkMode() >= 2;
+}
+
 //const idEventDef EV_Player_HideDatabaseEntry ( "<hidedatabaseentry>", NULL );
 const idEventDef EV_Player_ZoomIn ( "<zoomin>" );
 const idEventDef EV_Player_ZoomOut ( "<zoomout>" );
@@ -14044,7 +14056,19 @@ void idPlayer::UpdateDeathShader ( bool state_hitch ) {
 	if ( !doingDeathSkin && gameLocal.time > deathSkinTime && deathSkinTime ) {
 		deathSkinTime = 0;
 
-		if ( g_corpseSink.GetBool() ) {
+		if ( Player_UseCorpseSink() ) {
+			if ( Player_UseCorpseSinkNoRagdoll() ) {
+				const idVec3 corpseOrigin = GetPhysics()->GetOrigin();
+				const idMat3 corpseAxis = GetPhysics()->GetAxis();
+
+				StopRagdoll();
+				SetPhysics( &physicsObj );
+				physicsObj.SetOrigin( corpseOrigin );
+				physicsObj.SetAxis( corpseAxis );
+				physicsObj.SetClipModelAxis();
+				physicsObj.SetLinearVelocity( vec3_origin );
+			}
+
 			corpseSinkStartTime = gameLocal.time;
 			deathClearContentsTime = 0;
 			doingDeathSkin = true;

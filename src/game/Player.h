@@ -943,6 +943,7 @@ private:
 	float					weaponWheelBlend;
 	float					weaponWheelBaseTimescale;
 	idVec2					weaponWheelCursor;
+	idAngles				weaponWheelLastCmdAngles;
 
 	bool					tipUp;
 	bool					objectiveUp;

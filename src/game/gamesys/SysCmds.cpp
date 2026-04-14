@@ -3228,13 +3228,10 @@ void Cmd_AddBot_f(const idCmdArgs& args)
 
 void Cmd_FillBots_f(const idCmdArgs& args)
 {
-	gameLocal.AddBot("dark");
-	gameLocal.AddBot("major");
-	gameLocal.AddBot("gargoyle");
-	gameLocal.AddBot("skelebot");
-	gameLocal.AddBot("sly");
-	gameLocal.AddBot("neko");
-	gameLocal.AddBot("sarge");
+	for( int i = 0; i < 7; ++i )
+	{
+		gameLocal.AddBot( "major" );
+	}
 }
 // jmarshall end
 

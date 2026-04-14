@@ -7652,13 +7652,14 @@ void idGameLocal::ResetSpecialEffects() {
 	specialEffectsEnabled = 0;
 	memset( specialEffectParms, 0, sizeof( specialEffectParms ) );
 
-	// Stock Quake 4 blur defaults from rvBlurTexture.
+	// Default blur parameters for the post-process DoF path:
+	// neutral tint, near-camera focus, visible world-space blur range.
 	specialEffectParms[ SPECIAL_EFFECT_BLUR ][0] = 0.694f;
 	specialEffectParms[ SPECIAL_EFFECT_BLUR ][1] = 0.694f;
 	specialEffectParms[ SPECIAL_EFFECT_BLUR ][2] = 0.694f;
-	specialEffectParms[ SPECIAL_EFFECT_BLUR ][3] = 1.0f;
-	specialEffectParms[ SPECIAL_EFFECT_BLUR ][4] = 2.5f;
-	specialEffectParms[ SPECIAL_EFFECT_BLUR ][5] = 220.0f;
+	specialEffectParms[ SPECIAL_EFFECT_BLUR ][3] = 0.0f;
+	specialEffectParms[ SPECIAL_EFFECT_BLUR ][4] = 64.0f;
+	specialEffectParms[ SPECIAL_EFFECT_BLUR ][5] = 16.0f;
 	specialEffectParms[ SPECIAL_EFFECT_BLUR ][6] = 0.0f;
 	specialEffectParms[ SPECIAL_EFFECT_BLUR ][7] = 3.0f;
 }

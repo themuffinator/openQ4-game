@@ -28,6 +28,18 @@ static float AI_GetCorpseRemoveDelaySettingSeconds( void ) {
 	return g_corpseRemoveDelayMP.GetFloat();
 }
 
+static int AI_GetCorpseSinkMode( void ) {
+	return idMath::ClampInt( 0, 2, g_corpseSink.GetInteger() );
+}
+
+static bool AI_UseCorpseSink( void ) {
+	return AI_GetCorpseSinkMode() != 0;
+}
+
+static bool AI_UseCorpseSinkNoRagdoll( void ) {
+	return AI_GetCorpseSinkMode() >= 2;
+}
+
 static float AI_ResolveCorpseBurnDelaySeconds( float defaultBurnDelay ) {
 	const float overrideDelay = AI_GetCorpseRemoveDelaySettingSeconds();
 
@@ -757,7 +769,7 @@ stateResult_t idAI::State_Dead ( const stateParms_t& parms ) {
 				return SRESULT_DONE;
 			}
 
-			if ( g_corpseSink.GetBool() ) {
+			if ( AI_UseCorpseSink() ) {
 				float sinkDelay = -1.0f;
 				if ( defaultBurnDelay > 0.0f ) {
 					sinkDelay = AI_ResolveCorpseBurnDelaySeconds( defaultBurnDelay );
@@ -898,6 +910,17 @@ stateResult_t idAI::State_SinkCorpse( const stateParms_t& parms ) {
 	}
 
 	if ( parms.stage == 0 ) {
+		if ( AI_UseCorpseSinkNoRagdoll() ) {
+			const idVec3 corpseOrigin = GetPhysics()->GetOrigin();
+			const idMat3 corpseAxis = GetPhysics()->GetAxis();
+
+			StopRagdoll();
+			SetPhysics( &physicsObj );
+			physicsObj.SetOrigin( corpseOrigin );
+			physicsObj.SetAxis( corpseAxis );
+			physicsObj.SetLinearVelocity( vec3_zero );
+		}
+
 		renderEntity.noShadow = true;
 		SetCombatContents( false );
 		fl.takedamage = false;

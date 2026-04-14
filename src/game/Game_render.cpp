@@ -223,7 +223,9 @@ void idGameLocal::InitGameRenderSystem(void) {
 
 		idImage *albedoImage = renderSystem->CreateImage("_forwardRenderResolvedAlbedo", &opts, TF_LINEAR);
 		idImage *emissiveImage = renderSystem->CreateImage("_forwardRenderResolvedEmissive", &opts, TF_LINEAR);
-		opts.format = FMT_DEPTH;
+		// Match the forward pass depth attachment format so depth resolves/blits are valid
+		// on drivers that reject DEPTH_STENCIL -> DEPTH-only copies.
+		opts.format = FMT_DEPTH_STENCIL;
 		idImage *depthImage = renderSystem->CreateImage("_forwardRenderResolvedDepth", &opts, TF_LINEAR);
 
 		gameRender.forwardRenderPassResolvedRT = renderSystem->CreateRenderTexture(albedoImage, depthImage, emissiveImage);
@@ -370,11 +372,14 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	}
 	renderSystem->BindRenderTexture(nullptr, nullptr);
 
+	const bool blurEnabled = IsSpecialEffectEnabled( SPECIAL_EFFECT_BLUR ) &&
+		( gameRender.blurPostProcessMaterial != NULL );
+
 	// Resolve our MSAA buffer.
 	renderSystem->ResolveMSAA(
 		gameRender.forwardRenderPassRT,
 		gameRender.forwardRenderPassResolvedRT,
-		cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
+		blurEnabled || cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
 
 	// Resolve pass writes scene color to the post-process source buffer.
 	renderSystem->BindRenderTexture(gameRender.postProcessRT[0], nullptr);
@@ -425,9 +430,6 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		renderSystem->CaptureRenderToImage( "_postProcessAlbedo0" );
 		renderSystem->BindRenderTexture( nullptr, nullptr );
 	}
-
-	const bool blurEnabled = IsSpecialEffectEnabled( SPECIAL_EFFECT_BLUR ) &&
-		( gameRender.blurPostProcessMaterial != NULL );
 
 	const idMaterial* finalMaterial = gameRender.noPostProcessMaterial;
 	if ( blurEnabled ) {

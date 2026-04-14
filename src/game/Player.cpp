@@ -94,6 +94,18 @@ static int Player_GetCorpseRemoveDelayMS( void ) {
 	return 1000;
 }
 
+static int Player_GetCorpseSinkMode( void ) {
+	return idMath::ClampInt( 0, 2, g_corpseSink.GetInteger() );
+}
+
+static bool Player_UseCorpseSink( void ) {
+	return Player_GetCorpseSinkMode() != 0;
+}
+
+static bool Player_UseCorpseSinkNoRagdoll( void ) {
+	return Player_GetCorpseSinkMode() >= 2;
+}
+
 namespace {
 const int	WEAPON_WHEEL_SLOT_COUNT			= 12;
 const int	WEAPON_WHEEL_WEDGE_SUBDIVISIONS	= 12;
@@ -122,6 +134,7 @@ const float	WEAPON_WHEEL_INNER_RING_RADIUS	= WEAPON_WHEEL_INNER_RADIUS + 1.8f;
 const float	WEAPON_WHEEL_INNER_RING_HALF_WIDTH = 1.7f;
 const float	WEAPON_WHEEL_INNER_RING_CORE_HALF_WIDTH = 0.8f;
 const float	WEAPON_WHEEL_MOUSE_SENSITIVITY	= 0.70f;
+const float	WEAPON_WHEEL_LOOK_SENSITIVITY	= 0.08f;
 const float	WEAPON_WHEEL_TIMESCALE_SCALE	= 0.18f;
 const float	WEAPON_WHEEL_BLEND_IN_SPEED		= 8.0f;
 const float	WEAPON_WHEEL_BLEND_OUT_SPEED	= 9.0f;
@@ -1769,6 +1782,7 @@ idPlayer::idPlayer() {
 	weaponWheelBlend		= 0.0f;
 	weaponWheelBaseTimescale = 1.0f;
 	weaponWheelCursor.Zero();
+	weaponWheelLastCmdAngles.Zero();
 
 	lastDamageDef			= 0;
 	lastDamageDir			= vec3_zero;
@@ -10389,6 +10403,9 @@ void idPlayer::ApplyWeaponWheelInputMask( void ) {
 	const int maskedButtons = BUTTON_ATTACK | BUTTON_ZOOM | BUTTON_SCORES;
 	buttonMask |= maskedButtons;
 	usercmd.buttons &= ~maskedButtons;
+	usercmd.forwardmove = 0;
+	usercmd.rightmove = 0;
+	usercmd.upmove = 0;
 }
 
 void idPlayer::ResetWeaponWheel( bool instantRestore ) {
@@ -10397,6 +10414,9 @@ void idPlayer::ResetWeaponWheel( bool instantRestore ) {
 	weaponWheelCursor.Zero();
 	weaponWheelLastMouseX = usercmd.mx;
 	weaponWheelLastMouseY = usercmd.my;
+	weaponWheelLastCmdAngles[ PITCH ] = SHORT2ANGLE( usercmd.angles[ PITCH ] );
+	weaponWheelLastCmdAngles[ YAW ] = SHORT2ANGLE( usercmd.angles[ YAW ] );
+	weaponWheelLastCmdAngles[ ROLL ] = SHORT2ANGLE( usercmd.angles[ ROLL ] );
 	weaponWheelLastUpdateTime = Sys_Milliseconds();
 	weaponWheelBaseTimescale = cvarSystem->GetCVarFloat( "timescale" );
 
@@ -10516,12 +10536,23 @@ bool idPlayer::IsWeaponWheelSlotLowAmmo( int slot ) {
 void idPlayer::UpdateWeaponWheelCursor( void ) {
 	const int mouseDx = usercmd.mx - weaponWheelLastMouseX;
 	const int mouseDy = usercmd.my - weaponWheelLastMouseY;
+	idAngles currentCmdAngles;
+	currentCmdAngles[ PITCH ] = SHORT2ANGLE( usercmd.angles[ PITCH ] );
+	currentCmdAngles[ YAW ] = SHORT2ANGLE( usercmd.angles[ YAW ] );
+	currentCmdAngles[ ROLL ] = SHORT2ANGLE( usercmd.angles[ ROLL ] );
+	const float lookDx = idMath::AngleNormalize180( currentCmdAngles[ YAW ] - weaponWheelLastCmdAngles[ YAW ] );
+	const float lookDy = idMath::AngleNormalize180( currentCmdAngles[ PITCH ] - weaponWheelLastCmdAngles[ PITCH ] );
 
 	weaponWheelLastMouseX = usercmd.mx;
 	weaponWheelLastMouseY = usercmd.my;
+	weaponWheelLastCmdAngles = currentCmdAngles;
 
 	weaponWheelCursor.x += mouseDx * WEAPON_WHEEL_MOUSE_SENSITIVITY;
 	weaponWheelCursor.y += mouseDy * WEAPON_WHEEL_MOUSE_SENSITIVITY;
+	if ( mouseDx == 0 && mouseDy == 0 ) {
+		weaponWheelCursor.x += lookDx * WEAPON_WHEEL_LOOK_SENSITIVITY;
+		weaponWheelCursor.y += lookDy * WEAPON_WHEEL_LOOK_SENSITIVITY;
+	}
 
 	const float cursorLength = weaponWheelCursor.Length();
 	if ( cursorLength > WEAPON_WHEEL_CURSOR_RADIUS ) {
@@ -10549,9 +10580,9 @@ void idPlayer::UpdateWeaponWheelEffects( void ) {
 	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 0, WeaponWheelLerp( 0.694f, 0.820f, blend ) );
 	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 1, WeaponWheelLerp( 0.694f, 0.860f, blend ) );
 	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 2, WeaponWheelLerp( 0.694f, 0.930f, blend ) );
-	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 3, 1.0f );
-	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 4, WeaponWheelLerp( 2.5f, 13.5f, blend ) );
-	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 5, WeaponWheelLerp( 220.0f, 42.0f, blend ) );
+	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 3, 0.0f );
+	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 4, WeaponWheelLerp( 96.0f, 64.0f, blend ) );
+	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 5, WeaponWheelLerp( 24.0f, 16.0f, blend ) );
 	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 6, blend );
 	gameLocal.SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 7, Max( cvarSystem->GetCVarFloat( "r_znear" ), 0.25f ) );
 }
@@ -15049,7 +15080,19 @@ void idPlayer::UpdateDeathShader ( bool state_hitch ) {
 	if ( !doingDeathSkin && gameLocal.time > deathSkinTime && deathSkinTime ) {
 		deathSkinTime = 0;
 
-		if ( g_corpseSink.GetBool() ) {
+		if ( Player_UseCorpseSink() ) {
+			if ( Player_UseCorpseSinkNoRagdoll() ) {
+				const idVec3 corpseOrigin = GetPhysics()->GetOrigin();
+				const idMat3 corpseAxis = GetPhysics()->GetAxis();
+
+				StopRagdoll();
+				SetPhysics( &physicsObj );
+				physicsObj.SetOrigin( corpseOrigin );
+				physicsObj.SetAxis( corpseAxis );
+				physicsObj.SetClipModelAxis();
+				physicsObj.SetLinearVelocity( vec3_origin );
+			}
+
 			corpseSinkStartTime = gameLocal.time;
 			deathClearContentsTime = 0;
 			doingDeathSkin = true;

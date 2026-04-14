@@ -87,13 +87,13 @@ void rvmBot::BotUpdateInventory( void )
 	bs.inventory[INVENTORY_ROCKETLAUNCHER]  = HasWeapon( weapon_rocketlauncher );
 	bs.inventory[INVENTORY_LIGHTNING]		= 0;
 	bs.inventory[INVENTORY_RAILGUN]			= 0;
-	bs.inventory[INVENTORY_PLASMAGUN]		= HasWeapon( weapon_plasmagun );
+		bs.inventory[INVENTORY_PLASMAGUN]		= HasWeapon( weapon_plasmagun );
 	bs.inventory[INVENTORY_BFG10K]			= 0;
 	bs.inventory[INVENTORY_GRAPPLINGHOOK]	= 0;
 	bs.inventory[INVENTORY_SHELLS]			= inventory.ammo[rvWeapon::GetAmmoIndexForName( "ammo_shotgun" )];
 	bs.inventory[INVENTORY_BULLETS]			= inventory.ammo[rvWeapon::GetAmmoIndexForName( "ammo_machinegun" )];
 	bs.inventory[INVENTORY_GRENADES]		= 0;
-	bs.inventory[INVENTORY_CELLS]			= inventory.ammo[rvWeapon::GetAmmoIndexForName( "ammo_lightninggun" )];
+		bs.inventory[INVENTORY_CELLS]			= inventory.ammo[rvWeapon::GetAmmoIndexForName( "ammo_hyperblaster" )];
 	bs.inventory[INVENTORY_LIGHTNINGAMMO]	= 0;
 	bs.inventory[INVENTORY_ROCKETS]			= inventory.ammo[rvWeapon::GetAmmoIndexForName( "ammo_rocketlauncher" )];
 	bs.inventory[INVENTORY_SLUGS]			= 0;
@@ -133,7 +133,7 @@ void rvmBot::Spawn( void )
 	{
 		weapon_machinegun = SlotForWeapon( "weapon_machinegun" );
 		weapon_shotgun = SlotForWeapon( "weapon_shotgun" );
-		weapon_plasmagun = SlotForWeapon( "weapon_plasmagun" );
+		weapon_plasmagun = SlotForWeapon( "weapon_hyperblaster" );
 		weapon_rocketlauncher = SlotForWeapon( "weapon_rocketlauncher" );
 
 		WP_MACHINEGUN = weapon_machinegun;
