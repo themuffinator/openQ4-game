@@ -136,6 +136,7 @@ private:
 	void					Event_Fizzle			( void );
 	void					Event_RadiusDamage		( idEntity *ignore );
 	void					Event_ResidualDamage	( idEntity *ignore );
+	void					Event_EmitDamage		( idEntity *ignore );
 	void					Event_Touch				( idEntity *other, trace_t *trace );
 
 	bool					syncPhysics;

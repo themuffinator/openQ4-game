@@ -21,7 +21,7 @@ static const int 	RANGED_ENEMYDELAY				= 2000;		// Time to wait to move after lo
 static const int 	COVER_ENEMYDELAY				= 5000;		// Stay behind cover for 5 seconds after loosing sight of an enemy
 
 static const float	COVER_TRIGGERRADIUS				= 64.0f;
-static const int	CORPSE_SINK_TIME_MS			= 1500;
+static const int	CORPSE_SINK_TIME_MS				= 1500;
 static const float	CORPSE_SINK_DISTANCE			= 16.0f;
 
 static float AI_GetCorpseRemoveDelaySettingSeconds( void ) {

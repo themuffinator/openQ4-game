@@ -26,6 +26,7 @@ const idEventDef EV_Explode( "<explode>", NULL );
 const idEventDef EV_Fizzle( "<fizzle>", NULL );
 const idEventDef EV_RadiusDamage( "<radiusdmg>", "E" );
 const idEventDef EV_ResidualDamage ( "<residualdmg>", "E" );
+const idEventDef EV_EmitDamage ( "<emitdmg>", "E" );
 
 CLASS_DECLARATION( idEntity, idProjectile )
 	EVENT( EV_Explode,			idProjectile::Event_Explode )
@@ -33,6 +34,7 @@ CLASS_DECLARATION( idEntity, idProjectile )
 	EVENT( EV_Touch,			idProjectile::Event_Touch )
 	EVENT( EV_RadiusDamage,		idProjectile::Event_RadiusDamage )
 	EVENT( EV_ResidualDamage,	idProjectile::Event_ResidualDamage )
+	EVENT( EV_EmitDamage,		idProjectile::Event_EmitDamage )
 END_CLASS
 
 /*
@@ -530,6 +532,10 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 	hitCount = 0;
 
 	predictTime = prePredictTime;
+
+	if ( spawnArgs.GetFloat( "delay_emit_damage" ) > 0.0f ) {
+		PostEventSec( &EV_EmitDamage, spawnArgs.GetFloat( "wait_emit_damage", "0" ), this );
+	}
 
 	if ( gameLocal.isServer ) {
 		// store launch information for networking
@@ -1137,6 +1143,7 @@ void idProjectile::Fizzle( void ) {
 
 	state = FIZZLED;
 
+	CancelEvents( &EV_EmitDamage );
  	CancelEvents( &EV_Fizzle );
 	PostEventMS( &EV_Remove, spawnArgs.GetInt( "remove_time", "1500" ) );
 }
@@ -1168,6 +1175,16 @@ void idProjectile::Event_ResidualDamage ( idEntity* ignore ) {
 	PostEventSec ( &EV_ResidualDamage, spawnArgs.GetFloat ( "delay_residual" ), ignore );
 }
 
+void idProjectile::Event_EmitDamage ( idEntity* ignore ) {
+	const char *emit_damage = spawnArgs.GetString( "def_emit_damage" );
+	if ( emit_damage[0] != '\0' ) {
+		gameLocal.RadiusDamage( physicsObj.GetOrigin(), this, owner, ignore, this, emit_damage, damagePower, &hitCount );
+	}
+
+	// Keep the loop going
+	PostEventSec ( &EV_EmitDamage, spawnArgs.GetFloat ( "delay_emit_damage" ), ignore );
+}
+
 /*
 ================
 idProjectile::Explode
@@ -1180,6 +1197,8 @@ void idProjectile::Explode( const trace_t *collision, const bool showExplodeFX, 
 	if ( state == EXPLODED || state == FIZZLED ) {
 		return;
 	}
+
+	CancelEvents( &EV_EmitDamage );
 
 	if ( spawnArgs.GetVector( "detonation_axis", "", normal ) ) {
 		GetPhysics()->SetAxis( normal.ToMat3() );
