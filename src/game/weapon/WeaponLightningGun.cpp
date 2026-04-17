@@ -78,6 +78,8 @@ protected:
 private:
 
 	void				Attack					( idEntity* ent, const idVec3& dir, float power = 1.0f );
+	bool				GetBeamOrigin			( bool usePresentation, idVec3& origin, idMat3& axis );
+	void				TracePresentationBeam	( idVec3& endOrigin );
 
 	void				UpdateChainLightning	( void );
 	void				StopChainLightning		( void );
@@ -287,13 +289,7 @@ void rvWeaponLightningGun::Think ( void ) {
 	// and the end point of the trace
 	idVec3 origin;
 	idMat3 axis;
-	
-	//fire from chest if show gun models is off.
-	if( !cvarSystem->GetCVarBool("ui_showGun"))	{
-		GetGlobalJointTransform( true, chestJointView, origin, axis );
-	} else {
-		GetGlobalJointTransform( true, barrelJointView, origin, axis );
-	}
+	GetBeamOrigin( false, origin, axis );
 
 	// Cache the target we are hitting
 	currentPath.origin = tr.endpos;
@@ -338,21 +334,25 @@ rvWeaponLightningGun::UpdatePresentation
 ================
 */
 void rvWeaponLightningGun::UpdatePresentation( void ) {
-	if ( gameLocal.isNewFrame || !wsfl.attack || !IsReady() || !AmmoAvailable() ) {
+	if ( !wsfl.attack || !IsReady() || !AmmoAvailable() ) {
 		return;
 	}
 
-	UpdateTubes( Sys_Milliseconds() );
+	const int presentationTime = Sys_Milliseconds();
+	UpdateTubes( presentationTime );
 
 	idVec3 origin;
 	idMat3 axis;
-	if ( !cvarSystem->GetCVarBool( "ui_showGun" ) ) {
-		GetGlobalJointTransform( true, chestJointView, origin, axis );
-	} else {
-		GetGlobalJointTransform( true, barrelJointView, origin, axis );
-	}
+	GetBeamOrigin( true, origin, axis );
+	idVec3 endOrigin = currentPath.origin;
+	TracePresentationBeam( endOrigin );
 
-	UpdateEffects( origin );
+	UpdateTrailEffect( trailEffectView, origin, endOrigin, true );
+	if ( trailEffectView ) {
+		trailEffectView->SetAllowCurrentFramePresentationRefresh( true );
+		trailEffectView->GetRenderEffect()->allowSurfaceInViewID = owner->entityNumber + 1;
+		trailEffectView->UpdatePresentationEffect();
+	}
 }
 
 /*
@@ -551,6 +551,54 @@ void rvWeaponLightningGun::UpdateEffects( const idVec3& origin ) {
 		chainLightning[i].UpdateEffects( parent->origin, weaponDef->dict );
 		parent = &chainLightning[i];
 	}
+}
+
+/*
+================
+rvWeaponLightningGun::GetBeamOrigin
+================
+*/
+bool rvWeaponLightningGun::GetBeamOrigin( bool usePresentation, idVec3& origin, idMat3& axis ) {
+	if ( !cvarSystem->GetCVarBool( "ui_showGun" ) ) {
+		if ( usePresentation && owner ) {
+			const int presentationTime = Sys_Milliseconds();
+			if ( owner->GetPresentationJointWorldTransform( chestJointView, presentationTime, origin, axis ) ) {
+				return true;
+			}
+		}
+
+		return GetGlobalJointTransform( true, chestJointView, origin, axis );
+	}
+
+	if ( usePresentation ) {
+		return GetPresentationViewJointTransform( barrelJointView, origin, axis );
+	}
+
+	return GetGlobalJointTransform( true, barrelJointView, origin, axis );
+}
+
+/*
+================
+rvWeaponLightningGun::TracePresentationBeam
+================
+*/
+void rvWeaponLightningGun::TracePresentationBeam( idVec3& endOrigin ) {
+	if ( !owner ) {
+		endOrigin = currentPath.origin;
+		return;
+	}
+
+	idVec3 presentationViewOrigin;
+	idMat3 presentationViewAxis;
+	owner->GetPresentationViewPos( presentationViewOrigin, presentationViewAxis );
+
+	trace_t tr;
+	gameLocal.TracePoint( owner, tr,
+		presentationViewOrigin,
+		presentationViewOrigin + presentationViewAxis[0] * range,
+		(MASK_SHOT_RENDERMODEL | CONTENTS_WATER | CONTENTS_PROJECTILE), owner );
+
+	endOrigin = tr.endpos;
 }
 
 /*

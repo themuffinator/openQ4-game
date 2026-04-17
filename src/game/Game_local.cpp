@@ -4140,6 +4140,26 @@ static void GameLocal_UpdateSceneClientEntityPresentation( const idPlayer *viewP
 
 /*
 ================
+idGameLocal::PreparePlayerSceneForRender
+================
+*/
+void idGameLocal::PreparePlayerSceneForRender( idPlayer *player ) {
+	if ( player == NULL ) {
+		return;
+	}
+
+	player->CalculateRenderView();
+	player->UpdatePresentationEntities();
+	GameLocal_UpdateSceneProjectilePresentation( player );
+	GameLocal_UpdateSceneActiveEntityPresentation( player );
+	if ( player->weaponViewModel.GetEntity() ) {
+		player->weaponViewModel->UpdatePresentationWeapon( player->CanShowWeaponViewmodel() );
+	}
+	GameLocal_UpdateSceneClientEntityPresentation( player );
+}
+
+/*
+================
 idGameLocal::Draw
 
 makes rendering and sound system calls
@@ -4159,14 +4179,7 @@ bool idGameLocal::Draw( int clientNum ) {
 		return false;
 	}
 
-	player->CalculateRenderView();
-	player->UpdatePresentationEntities();
-	GameLocal_UpdateSceneProjectilePresentation( player );
-	GameLocal_UpdateSceneActiveEntityPresentation( player );
-	if ( player->weaponViewModel.GetEntity() ) {
-		player->weaponViewModel->UpdatePresentationWeapon( player->CanShowWeaponViewmodel() );
-	}
-	GameLocal_UpdateSceneClientEntityPresentation( player );
+	PreparePlayerSceneForRender( player );
 
 	// render the scene
 	player->playerView.RenderPlayerView( player->hud );
@@ -8337,7 +8350,8 @@ idEntity* idGameLocal::HitScan(
 	float			damageScale,
 // twhitaker: added additionalIgnore parameter
 	idEntity*		additionalIgnore,
-	int				areas[ 2 ]
+	int				areas[ 2 ],
+	hitscanVisualInfo_t* visualInfo
 	) {
 
 	idVec3		dir;
@@ -8354,10 +8368,15 @@ idEntity* idGameLocal::HitScan(
 	mpLagCompRestore_t lagCompRestore[ MAX_CLIENTS ];
 	int			lagCompRestoreCount = 0;
 	bool		lagCompApplied = false;
+	const bool	applyHitscanTint = owner && hitscanDict.GetBool( "hitscanTint" ) && owner->IsType( idPlayer::GetClassType() );
 
 	if ( areas ) {
 		areas[ 0 ] = pvs.GetPVSArea( origFxOrigin );
 		areas[ 1 ] = -1;
+	}
+
+	if ( visualInfo ) {
+		visualInfo->Clear();
 	}
 
 	ignore    = owner;
@@ -8367,7 +8386,7 @@ idEntity* idGameLocal::HitScan(
 		lagCompApplied = BeginMPLagCompensation( static_cast<idPlayer *>( owner ), lagCompRestore, lagCompRestoreCount );
 	}
 
-	if( owner && hitscanDict.GetBool( "hitscanTint" ) && owner->IsType( idPlayer::GetClassType() ) ) {
+	if ( applyHitscanTint ) {
 		hitscanTint = ((idPlayer*)owner)->GetHitscanTint();
 	}
 
@@ -8448,12 +8467,16 @@ idEntity* idGameLocal::HitScan(
 			// If the hitscan hit a no impact surface we can just return out
 			//assert( tr.c.material );
 			if ( tr.fraction >= 1.0f || (tr.c.material && tr.c.material->GetSurfaceFlags() & SURF_NOIMPACT) ) {					
-				PlayEffect( hitscanDict, "fx_path", fxOrigin, dir.ToMat3(), false, tr.endpos, false, EC_IGNORE, hitscanTint );	
-				if ( random.RandomFloat( ) < tracerChance ) {
-					PlayEffect( hitscanDict, "fx_tracer", fxOrigin, dir.ToMat3(), false, tr.endpos );
-					tracer = true;
-				} else {
-					tracer = false;
+				const idDecl *pathEffect = GetEffect( hitscanDict, "fx_path" );
+				const bool shouldPlayTracer = random.RandomFloat() < tracerChance;
+				const idDecl *tracerEffect = shouldPlayTracer ? GetEffect( hitscanDict, "fx_tracer" ) : NULL;
+
+				PlayEffect( pathEffect, fxOrigin, dir.ToMat3(), false, tr.endpos, false, false, EC_IGNORE, hitscanTint );
+				PlayEffect( tracerEffect, fxOrigin, dir.ToMat3(), false, tr.endpos );
+				tracer = shouldPlayTracer;
+
+				if ( visualInfo ) {
+					visualInfo->endOrigin = tr.endpos;
 				}
 
 				if ( areas ) {
@@ -8486,7 +8509,7 @@ idEntity* idGameLocal::HitScan(
 				// Continue on excluding water
 				contents &= (~CONTENTS_WATER);
 
-				if ( !g_perfTest_weaponNoFX.GetBool() ) {
+				if ( !g_perfTest_weaponNoFX.GetBool() && !noFX ) {
 					if ( ent->CanPlayImpactEffect( owner, ent ) ) {
 						if ( ent->IsType( idMover::GetClassType( ) ) ) {
 							ent->PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, tr.c.normal.ToMat3(), false, vec3_origin, false, EC_IMPACT, hitscanTint );
@@ -8596,12 +8619,15 @@ idEntity* idGameLocal::HitScan(
 		// Path effect 
 		fxDir = collisionPoint - fxOrigin;
 		fxDir.Normalize( );
-		PlayEffect( hitscanDict, "fx_path", fxOrigin, fxDir.ToMat3(), false, collisionPoint, false, EC_IGNORE, hitscanTint );	
-		if ( !ent->fl.takedamage && random.RandomFloat ( ) < tracerChance ) {
-			PlayEffect( hitscanDict, "fx_tracer", fxOrigin, fxDir.ToMat3(), false, collisionPoint );
-			tracer = true;
-		} else {
-			tracer = false;
+		const idDecl *pathEffect = GetEffect( hitscanDict, "fx_path" );
+		const bool shouldPlayTracer = !ent->fl.takedamage && random.RandomFloat() < tracerChance;
+		const idDecl *tracerEffect = shouldPlayTracer ? GetEffect( hitscanDict, "fx_tracer" ) : NULL;
+		PlayEffect( pathEffect, fxOrigin, fxDir.ToMat3(), false, collisionPoint, false, false, EC_IGNORE, hitscanTint );
+		PlayEffect( tracerEffect, fxOrigin, fxDir.ToMat3(), false, collisionPoint );
+		tracer = shouldPlayTracer;
+
+		if ( visualInfo ) {
+			visualInfo->endOrigin = collisionPoint;
 		}
 
 		if ( !reflect ) {
@@ -8624,12 +8650,21 @@ idEntity* idGameLocal::HitScan(
 				axis = tr.c.normal.ToMat3();
 			}
 			
-			if ( !g_perfTest_weaponNoFX.GetBool() ) {
+			if ( !g_perfTest_weaponNoFX.GetBool() && !noFX ) {
 				if ( ent->CanPlayImpactEffect( owner, ent ) ) {
+					const idDecl *impactEffect = GetEffect( hitscanDict, "fx_impact", tr.c.materialType );
+
+					if ( visualInfo ) {
+						visualInfo->impactEffect = impactEffect;
+						visualInfo->impactAxisDir = axis[ 0 ];
+						visualInfo->impactMoverEntityNum = ent->IsType( idMover::GetClassType() ) ? ent->entityNumber : -1;
+						visualInfo->impactUsesHitscanTint = applyHitscanTint;
+					}
+
 					if ( ent->IsType( idMover::GetClassType( ) ) ) {
-						ent->PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, axis, false, vec3_origin, false, EC_IMPACT, hitscanTint );					
+						ent->PlayEffect( impactEffect, collisionPoint, axis, false, vec3_origin, false, EC_IMPACT, hitscanTint );					
 					} else {
-						gameLocal.PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, axis, false, vec3_origin, false, false, EC_IMPACT, hitscanTint );
+						gameLocal.PlayEffect( impactEffect, collisionPoint, axis, false, vec3_origin, false, false, EC_IMPACT, hitscanTint );
 					}
 				}
 			}

@@ -2007,12 +2007,38 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	fxOrigin[0] = msg.ReadFloat();
 	fxOrigin[1] = msg.ReadFloat();
 	fxOrigin[2] = msg.ReadFloat();
-
-	// one direction sent per hitscan
+ 
+	// one direction sent per hitscan. The client keeps the existing path/tracer
+	// retrace, but authoritative impact FX are replicated separately so we don't
+	// depend on the late client trace to hit the same moving target/surface.
 	for( i = 0; i < num_hitscans; i++ ) {
 		dir = msg.ReadDir( 24 );
-		gameLocal.HitScan( decl->dict, muzzleOrigin, dir, fxOrigin, owner );
+		gameLocal.HitScan( decl->dict, muzzleOrigin, dir, fxOrigin, owner, true );
 	}
+}
+
+void idGameLocal::ClientHitScanImpact( const idBitMsg &msg ) {
+	idVec3 origin;
+	idVec3 axisDir;
+	idVec4 hitscanTint( 1.0f, 1.0f, 1.0f, 1.0f );
+	const idDecl *impactEffect;
+	idEntity *owner;
+
+	assert( isClient );
+
+	owner = entities[ msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) ) ];
+	impactEffect = idGameLocal::ReadDecl( msg, DECL_EFFECT );
+
+	origin[0] = msg.ReadFloat();
+	origin[1] = msg.ReadFloat();
+	origin[2] = msg.ReadFloat();
+	axisDir = msg.ReadDir( 24 );
+
+	if ( owner && owner->IsType( idPlayer::GetClassType() ) ) {
+		hitscanTint = static_cast< idPlayer* >( owner )->GetHitscanTint();
+	}
+
+	gameLocal.PlayEffect( impactEffect, origin, axisDir.ToMat3(), false, vec3_origin, false, false, EC_IMPACT, hitscanTint );
 }
 
 // RAVEN END
@@ -3435,7 +3461,7 @@ instanceEnt to NULL for no instance checks
 excludeClient to -1 for no exclusions
 ===============
 */
-void idGameLocal::SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1, int area2 ) {
+void idGameLocal::SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1, int area2, int excludeClient ) {
 	int			icl;
 	int			matchInstance = instanceEnt ? instanceEnt->GetInstance() : -1;
 	idPlayer	*player;
@@ -3455,6 +3481,9 @@ void idGameLocal::SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity 
 	for ( icl = 0; icl < numClients; icl++ ) {
 		if ( icl == localClientNum ) {
 			// local client is always excluded
+			continue;
+		}
+		if ( icl == excludeClient ) {
 			continue;
 		}
 		if ( !entities[ icl ] ) {
@@ -3649,6 +3678,10 @@ void idGameLocal::ProcessUnreliableMessage( const idBitMsg &msg ) {
 		}
 		case GAME_UNRELIABLE_MESSAGE_HITSCAN: {
 			ClientHitScan( msg );
+			break;
+		}
+		case GAME_UNRELIABLE_MESSAGE_HITSCAN_IMPACT: {
+			ClientHitScanImpact( msg );
 			break;
 		}
 #ifdef _USE_VOICECHAT

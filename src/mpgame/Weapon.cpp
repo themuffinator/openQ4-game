@@ -15,6 +15,19 @@
 #include "client/ClientEffect.h"
 //#include "../renderer/tr_local.h"
 
+static idMat3 Weapon_InterpolateAxis( const idMat3 &from, const idMat3 &to, float fraction ) {
+	if ( fraction <= 0.0f ) {
+		return from;
+	}
+	if ( fraction >= 1.0f ) {
+		return to;
+	}
+
+	idQuat blended;
+	blended.Slerp( from.ToQuat(), to.ToQuat(), fraction );
+	return blended.ToMat3();
+}
+
 int rvWeapon::GetFirstPersonShadowSuppressLightId( void ) const {
 	if ( owner == NULL ) {
 		return 0;
@@ -369,10 +382,7 @@ void rvViewWeapon::UpdatePresentationWeapon( bool showViewModel ) {
 	renderEntity.allowSurfaceInViewID = weapon->GetOwner()->entityNumber + 1;
 	renderEntity.weaponDepthHackInViewID = weapon->GetOwner()->entityNumber + 1;
 
-	idVec3 presentationViewOrigin;
-	idMat3 presentationViewAxis;
-	weapon->GetOwner()->GetPresentationViewPos( presentationViewOrigin, presentationViewAxis );
-	weapon->UpdateViewModelPresentation( presentationViewOrigin, presentationViewAxis );
+	weapon->ApplyPresentationViewModelTransform();
 	weapon->UpdatePresentationLights( true );
 	weapon->UpdatePresentation();
 
@@ -667,6 +677,17 @@ void rvWeapon::Spawn ( void ) {
 	pushVelocity.Zero();
 	playerViewAxis.Identity();
 	playerViewOrigin.Zero();
+	presentationViewModelTime = -1;
+	presentationViewModelRealFrame = -1;
+	presentationViewModelCanInterpolate = false;
+	presentationPrevPlayerViewOrigin.Zero();
+	presentationPrevPlayerViewAxis.Identity();
+	presentationCurPlayerViewOrigin.Zero();
+	presentationCurPlayerViewAxis.Identity();
+	presentationPrevViewModelOrigin.Zero();
+	presentationPrevViewModelAxis.Identity();
+	presentationCurViewModelOrigin.Zero();
+	presentationCurViewModelAxis.Identity();
 	viewModelAxis.Identity();
 	viewModelOrigin.Zero();
 
@@ -1064,15 +1085,120 @@ void rvWeapon::CalculateViewModelTransform( const idVec3 &playerOrigin, const id
 	MuzzleRise( origin, axis );
 }
 
+void rvWeapon::UpdatePresentationViewModelState( const idVec3 &playerOrigin, const idMat3 &playerAxis, const idVec3 &origin, const idMat3 &axis ) {
+	const bool exactGameFrameRate = ( gameLocal.GetMHz() == common->GetUserCmdHz() );
+
+	if ( presentationViewModelTime < 0 ) {
+		presentationViewModelTime = gameLocal.time;
+		presentationViewModelRealFrame = gameLocal.framenum;
+		presentationViewModelCanInterpolate = false;
+		presentationPrevPlayerViewOrigin = playerOrigin;
+		presentationPrevPlayerViewAxis = playerAxis;
+		presentationCurPlayerViewOrigin = playerOrigin;
+		presentationCurPlayerViewAxis = playerAxis;
+		presentationPrevViewModelOrigin = origin;
+		presentationPrevViewModelAxis = axis;
+		presentationCurViewModelOrigin = origin;
+		presentationCurViewModelAxis = axis;
+		return;
+	}
+
+	if ( presentationViewModelTime != gameLocal.time ) {
+		const int deltaTime = gameLocal.time - presentationViewModelTime;
+		const int maxSequentialDelta = static_cast<int>( idMath::Ceil( common->GetUserCmdMsecFloat() ) );
+		const bool sequentialFrame = deltaTime > 0 && deltaTime <= maxSequentialDelta;
+		const idVec3 originDelta = origin - presentationCurViewModelOrigin;
+		idAngles anglesDelta = axis.ToAngles() - presentationCurViewModelAxis.ToAngles();
+		anglesDelta.Normalize180();
+		const bool smallWeaponDelta =
+			originDelta.LengthSqr() <= Square( 24.0f ) &&
+			anglesDelta.Length() <= 70.0f;
+
+		presentationPrevPlayerViewOrigin = presentationCurPlayerViewOrigin;
+		presentationPrevPlayerViewAxis = presentationCurPlayerViewAxis;
+		presentationPrevViewModelOrigin = presentationCurViewModelOrigin;
+		presentationPrevViewModelAxis = presentationCurViewModelAxis;
+		presentationCurPlayerViewOrigin = playerOrigin;
+		presentationCurPlayerViewAxis = playerAxis;
+		presentationCurViewModelOrigin = origin;
+		presentationCurViewModelAxis = axis;
+		presentationViewModelTime = gameLocal.time;
+		presentationViewModelRealFrame = gameLocal.framenum;
+		presentationViewModelCanInterpolate =
+			exactGameFrameRate &&
+			sequentialFrame &&
+			owner &&
+			owner->CanInterpolatePresentationView() &&
+			smallWeaponDelta;
+		if ( !presentationViewModelCanInterpolate ) {
+			presentationPrevPlayerViewOrigin = presentationCurPlayerViewOrigin;
+			presentationPrevPlayerViewAxis = presentationCurPlayerViewAxis;
+			presentationPrevViewModelOrigin = presentationCurViewModelOrigin;
+			presentationPrevViewModelAxis = presentationCurViewModelAxis;
+		}
+		return;
+	}
+
+	presentationCurPlayerViewOrigin = playerOrigin;
+	presentationCurPlayerViewAxis = playerAxis;
+	presentationCurViewModelOrigin = origin;
+	presentationCurViewModelAxis = axis;
+	if ( !owner || !owner->CanInterpolatePresentationView() ) {
+		presentationViewModelCanInterpolate = false;
+		presentationPrevPlayerViewOrigin = presentationCurPlayerViewOrigin;
+		presentationPrevPlayerViewAxis = presentationCurPlayerViewAxis;
+		presentationPrevViewModelOrigin = presentationCurViewModelOrigin;
+		presentationPrevViewModelAxis = presentationCurViewModelAxis;
+	}
+}
+
+void rvWeapon::GetPresentationViewModelTransform( idVec3 &playerOrigin, idMat3 &playerAxis, idVec3 &origin, idMat3 &axis ) const {
+	if ( presentationViewModelTime < 0 || !presentationViewModelCanInterpolate || !owner ) {
+		playerOrigin = playerViewOrigin;
+		playerAxis = playerViewAxis;
+		origin = viewModelOrigin;
+		axis = viewModelAxis;
+		return;
+	}
+
+	const float fraction = owner->GetPresentationViewBlendFraction();
+	playerOrigin.Lerp( presentationPrevPlayerViewOrigin, presentationCurPlayerViewOrigin, fraction );
+	playerAxis = Weapon_InterpolateAxis( presentationPrevPlayerViewAxis, presentationCurPlayerViewAxis, fraction );
+	origin.Lerp( presentationPrevViewModelOrigin, presentationCurViewModelOrigin, fraction );
+	axis = Weapon_InterpolateAxis( presentationPrevViewModelAxis, presentationCurViewModelAxis, fraction );
+}
+
 void rvWeapon::UpdateViewModelPresentation( const idVec3 &playerOrigin, const idMat3 &playerAxis ) {
 	playerViewOrigin = playerOrigin;
 	playerViewAxis = playerAxis;
 
 	CalculateViewModelTransform( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
+	UpdatePresentationViewModelState( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
 
 	if ( viewModel ) {
 		viewModel->GetPhysics()->SetOrigin( viewModelOrigin );
 		viewModel->GetPhysics()->SetAxis( viewModelAxis );
+		viewModel->UpdateVisuals();
+	} else {
+		common->Warning( "NULL viewmodel %s\n", __FUNCTION__ );
+	}
+}
+
+void rvWeapon::ApplyPresentationViewModelTransform( void ) {
+	idVec3 presentationPlayerViewOrigin;
+	idMat3 presentationPlayerViewAxis;
+	idVec3 presentationViewModelOrigin;
+	idMat3 presentationViewModelAxis;
+
+	GetPresentationViewModelTransform(
+		presentationPlayerViewOrigin,
+		presentationPlayerViewAxis,
+		presentationViewModelOrigin,
+		presentationViewModelAxis );
+
+	if ( viewModel ) {
+		viewModel->GetPhysics()->SetOrigin( presentationViewModelOrigin );
+		viewModel->GetPhysics()->SetAxis( presentationViewModelAxis );
 		viewModel->UpdateVisuals();
 	} else {
 		common->Warning( "NULL viewmodel %s\n", __FUNCTION__ );
@@ -1092,15 +1218,15 @@ bool rvWeapon::GetPresentationViewJointTransform( const jointHandle_t jointHandl
 		return GetGlobalJointTransform( true, jointHandle, origin, axis, offset );
 	}
 
-	owner->UpdatePresentationViewState();
-
-	idVec3 presentationViewOrigin;
-	idMat3 presentationViewAxis;
-	owner->GetPresentationViewPos( presentationViewOrigin, presentationViewAxis );
-
+	idVec3 presentationPlayerViewOrigin;
+	idMat3 presentationPlayerViewAxis;
 	idVec3 presentationViewModelOrigin;
 	idMat3 presentationViewModelAxis;
-	CalculateViewModelTransform( presentationViewOrigin, presentationViewAxis, presentationViewModelOrigin, presentationViewModelAxis );
+	GetPresentationViewModelTransform(
+		presentationPlayerViewOrigin,
+		presentationPlayerViewAxis,
+		presentationViewModelOrigin,
+		presentationViewModelAxis );
 
 	if ( viewAnimator->GetJointTransform( jointHandle, gameLocal.time, origin, axis ) ) {
 		origin = offset * axis + origin;
@@ -1120,7 +1246,13 @@ rvWeapon::Think
 ================
 */
 void rvWeapon::Think ( void ) {	
-	UpdateViewModelPresentation( owner->firstPersonViewOrigin, owner->firstPersonViewAxis );
+	// Keep the captured viewmodel pose keyed to real simulation snapshots.
+	// On repeated-state presentation frames the draw path applies the cached
+	// interpolated pose; rebuilding the live transform here reintroduces the
+	// listen-server local-client shove/jitter we are trying to avoid.
+	if ( gameLocal.isNewFrame || presentationViewModelTime < 0 ) {
+		UpdateViewModelPresentation( owner->firstPersonViewOrigin, owner->firstPersonViewAxis );
+	}
 	
 	// Update the zoom variable before updating the script
 	wsfl.zoom = owner->IsZoomed( );
@@ -1293,6 +1425,16 @@ void rvWeapon::UpdatePresentationLights( bool updateViewLights ) {
 		return;
 	}
 
+	idVec3 presentationPlayerViewOrigin;
+	idMat3 presentationPlayerViewAxis;
+	idVec3 presentationViewModelOrigin;
+	idMat3 presentationViewModelAxis;
+	GetPresentationViewModelTransform(
+		presentationPlayerViewOrigin,
+		presentationPlayerViewAxis,
+		presentationViewModelOrigin,
+		presentationViewModelAxis );
+
 	if ( lightHandles[WPLIGHT_MUZZLEFLASH] != -1 || lightHandles[WPLIGHT_MUZZLEFLASH_WORLD] != -1 ) {
 		if ( gameLocal.time >= muzzleFlashEnd || !gameLocal.GetLocalPlayer() || gameLocal.GetLocalPlayer()->GetInstance() != owner->GetInstance() ) {
 			FreeLight( WPLIGHT_MUZZLEFLASH );
@@ -1302,8 +1444,8 @@ void rvWeapon::UpdatePresentationLights( bool updateViewLights ) {
 			renderLight_t& lightWorld = lights[WPLIGHT_MUZZLEFLASH_WORLD];
 
 			if ( updateViewLights && lightHandles[WPLIGHT_MUZZLEFLASH] != -1 ) {
-				light.origin = playerViewOrigin + ( playerViewAxis * muzzleFlashViewOffset );
-				light.axis = playerViewAxis;
+				light.origin = presentationPlayerViewOrigin + ( presentationPlayerViewAxis * muzzleFlashViewOffset );
+				light.axis = presentationPlayerViewAxis;
 				UpdateLight( WPLIGHT_MUZZLEFLASH );
 			}
 
@@ -1325,9 +1467,9 @@ void rvWeapon::UpdatePresentationLights( bool updateViewLights ) {
 			if ( updateViewLights && lightHandles[WPLIGHT_FLASHLIGHT] != -1 ) {
 				trace_t tr;
 
-				GetGlobalJointTransform( true, flashlightJointView, light.origin, light.axis, flashlightViewOffset );
-				gameLocal.TracePoint( owner, tr, light.origin - playerViewAxis[0] * 8.0f, light.origin, MASK_SHOT_BOUNDINGBOX, owner );
-				light.origin = tr.endpos - ( tr.fraction < 1.0f ? ( playerViewAxis[0] * 8 ) : vec3_origin );
+				GetPresentationViewJointTransform( flashlightJointView, light.origin, light.axis, flashlightViewOffset );
+				gameLocal.TracePoint( owner, tr, light.origin - presentationPlayerViewAxis[0] * 8.0f, light.origin, MASK_SHOT_BOUNDINGBOX, owner );
+				light.origin = tr.endpos - ( tr.fraction < 1.0f ? ( presentationPlayerViewAxis[0] * 8 ) : vec3_origin );
 				UpdateLight( WPLIGHT_FLASHLIGHT );
 			}
 
@@ -1335,8 +1477,8 @@ void rvWeapon::UpdatePresentationLights( bool updateViewLights ) {
 				if ( flashlightJointWorld != INVALID_JOINT ) {
 					GetGlobalJointTransform( false, flashlightJointWorld, lightWorld.origin, lightWorld.axis );
 				} else {
-					lightWorld.origin = playerViewOrigin + playerViewAxis[0] * 20.0f;
-					lightWorld.axis = playerViewAxis;
+					lightWorld.origin = presentationPlayerViewOrigin + presentationPlayerViewAxis[0] * 20.0f;
+					lightWorld.axis = presentationPlayerViewAxis;
 				}
 				UpdateLight( WPLIGHT_FLASHLIGHT_WORLD );
 			}
@@ -2917,9 +3059,11 @@ void rvWeapon::Hitscan( const idDict& dict, const idVec3& muzzleOrigin, const id
 	float	spin;
 	idVec3	dir;
 	int		areas[ 2 ];
+	hitscanVisualInfo_t hitscanVisualInfo;
 
 	idBitMsg	msg;
 	byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
+	const int ownerId = owner ? owner->entityNumber : 0;
 
 	// Let the AI know about the new attack
 	if ( !gameLocal.isMultiplayer ) {
@@ -2932,7 +3076,6 @@ void rvWeapon::Hitscan( const idDict& dict, const idVec3& muzzleOrigin, const id
 
 		assert( hitscanAttackDef >= 0 );
 		assert( owner && owner->entityNumber < MAX_CLIENTS );
-		int ownerId = owner ? owner->entityNumber : 0;
 
 		msg.Init( msgBuf, sizeof( msgBuf ) );
 		msg.BeginWriting();
@@ -3009,15 +3152,38 @@ void rvWeapon::Hitscan( const idDict& dict, const idVec3& muzzleOrigin, const id
 		}
 		dir.Normalize();
 
-		gameLocal.HitScan( dict, muzzleOrigin, dir, fxOrigin, owner, false, 1.0f, NULL, areas );
+		hitscanVisualInfo.Clear();
+		gameLocal.HitScan( dict, muzzleOrigin, dir, fxOrigin, owner, false, 1.0f, NULL, areas, &hitscanVisualInfo );
 
 		if ( gameLocal.isServer ) {
 			msg.WriteDir( dir, 24 );
+
 			if ( i == num_hitscans - 1 ) {
 				// NOTE: we emit to the areas of the last hitscan
 				// there is a remote possibility that multiple hitscans for shotgun would cover more than 2 areas,
 				// so in some rare case a client might miss it
 				gameLocal.SendUnreliableMessagePVS( msg, owner, areas[0], areas[1] );
+			}
+
+			if ( hitscanVisualInfo.impactEffect != NULL ) {
+				idBitMsg impactMsg;
+				byte impactMsgBuf[ MAX_GAME_MESSAGE_SIZE ];
+
+				impactMsg.Init( impactMsgBuf, sizeof( impactMsgBuf ) );
+				impactMsg.BeginWriting();
+				impactMsg.WriteByte( GAME_UNRELIABLE_MESSAGE_HITSCAN_IMPACT );
+				impactMsg.WriteBits( ownerId, idMath::BitsForInteger( MAX_CLIENTS ) );
+				idGameLocal::WriteDecl( impactMsg, hitscanVisualInfo.impactEffect );
+				impactMsg.WriteFloat( hitscanVisualInfo.endOrigin[0] );
+				impactMsg.WriteFloat( hitscanVisualInfo.endOrigin[1] );
+				impactMsg.WriteFloat( hitscanVisualInfo.endOrigin[2] );
+				impactMsg.WriteDir( hitscanVisualInfo.impactAxisDir, 24 );
+				gameLocal.SendUnreliableMessagePVS(
+					impactMsg,
+					owner,
+					gameLocal.pvs.GetPVSArea( hitscanVisualInfo.endOrigin ),
+					-1,
+					ownerId );
 			}
 		}
 	}

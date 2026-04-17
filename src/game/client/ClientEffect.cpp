@@ -60,6 +60,7 @@ void rvClientEffect::Init ( const idDecl *effect ) {
 	renderEffect.shaderParms[SHADERPARM_TIMEOFFSET] = MS2SEC( gameLocal.time );
 	effectDefHandle = -1;
 	endOriginJoint	= INVALID_JOINT;
+	allowCurrentFramePresentationRefresh = false;
 }
 
 /*
@@ -173,7 +174,7 @@ rvClientEffect::UpdatePresentationEffect
 */
 void rvClientEffect::UpdatePresentationEffect( void ) {
 	const bool allowCurrentFrameViewWeaponRefresh = bindMaster && bindMaster->IsType( rvViewWeapon::GetClassType() );
-	if ( ( gameLocal.isNewFrame && !allowCurrentFrameViewWeaponRefresh ) || effectDefHandle < 0 ) {
+	if ( ( gameLocal.isNewFrame && !allowCurrentFrameViewWeaponRefresh && !allowCurrentFramePresentationRefresh ) || effectDefHandle < 0 ) {
 		return;
 	}
 
@@ -424,6 +425,7 @@ void rvClientEffect::Restore( idRestoreGame *savefile ) {
 	effectDefHandle = -1;
 	renderEffect.referenceSoundHandle = -1;
 	savefile->ReadJoint( endOriginJoint );
+	allowCurrentFramePresentationRefresh = false;
 }
 
 /*

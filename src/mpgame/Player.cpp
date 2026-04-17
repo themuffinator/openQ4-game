@@ -30,7 +30,7 @@
 
 idCVar net_predictionErrorDecay( "net_predictionErrorDecay", "112", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "time in milliseconds it takes to fade away prediction errors", 0.0f, 200.0f );
 idCVar net_showPredictionError( "net_showPredictionError", "-1", CVAR_INTEGER | CVAR_GAME | CVAR_NOCHEAT, "show prediction errors for the given client", -1, MAX_CLIENTS );
-idCVar pm_presentViewBias( "pm_presentViewBias", "1", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "bias first-person presentation interpolation toward the latest simulation snapshot to reduce one-tic high-refresh view lag", 0.0f, 1.0f );
+idCVar pm_presentViewBias( "pm_presentViewBias", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "bias first-person presentation interpolation toward the latest simulation snapshot to reduce one-tic high-refresh view lag", 0.0f, 1.0f );
 
 static int Player_GetPresentationTime( void ) {
 	return Sys_Milliseconds();
@@ -54,9 +54,10 @@ static float Player_GetPresentationViewBlendFraction( void ) {
 	const float fraction = Player_GetPresentationInterpolationFraction();
 	const float bias = idMath::ClampFloat( 0.0f, 1.0f, pm_presentViewBias.GetFloat() );
 
-	// Keep the local first-person view closer to the latest authoritative
-	// snapshot without ever extrapolating past it.
-	return idMath::ClampFloat( 0.0f, 1.0f, fraction * ( 1.0f + bias ) );
+	// Bias toward the newest snapshot without racing to it halfway through the
+	// tic and then stalling, which makes first-person motion feel pushy/jittery
+	// at high presentation rates.
+	return idMath::ClampFloat( 0.0f, 1.0f, fraction + ( fraction * ( 1.0f - fraction ) * bias ) );
 }
 
 static idMat3 Player_InterpolateAxis( const idMat3 &from, const idMat3 &to, float fraction ) {
@@ -1315,6 +1316,7 @@ idPlayer::idPlayer() {
 
 	memset( loggedViewAngles, 0, sizeof( loggedViewAngles ) );
 	memset( loggedAccel, 0, sizeof( loggedAccel ) );
+	currentLoggedViewAngles = 0;
 	currentLoggedAccel	= 0;
 
 	focusTime				= 0;
@@ -1648,6 +1650,7 @@ void idPlayer::Init( void ) {
 	influenceMaterial		= NULL;
  	influenceSkin			= NULL;
 
+	currentLoggedViewAngles = 0;
 	currentLoggedAccel		= 0;
 
 	focusTime				= 0;
@@ -2387,6 +2390,7 @@ void idPlayer::Save( idSaveGame *savefile ) const {
 	for( i = 0; i < NUM_LOGGED_VIEW_ANGLES; i++ ) {
 		savefile->WriteAngles( loggedViewAngles[ i ] );
 	}
+	savefile->WriteInt( currentLoggedViewAngles );
 	for( i = 0; i < NUM_LOGGED_ACCELS; i++ ) {
 		savefile->WriteInt( loggedAccel[ i ].time );
 		savefile->WriteVec3( loggedAccel[ i ].dir );
@@ -2676,6 +2680,7 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	for( i = 0; i < NUM_LOGGED_VIEW_ANGLES; i++ ) {
 		savefile->ReadAngles( loggedViewAngles[ i ] );
 	}
+	savefile->ReadInt( currentLoggedViewAngles );
 	for( i = 0; i < NUM_LOGGED_ACCELS; i++ ) {
 		savefile->ReadInt( loggedAccel[ i ].time );
 		savefile->ReadVec3( loggedAccel[ i ].dir );
@@ -8062,8 +8067,14 @@ void idPlayer::UpdateViewAngles( void ) {
 	// orient the model towards the direction we're looking
 	SetAngles( idAngles( 0, viewAngles.yaw, 0 ) );
 
-	// save in the log for analyzing weapon angle offsets
-	loggedViewAngles[ gameLocal.framenum & (NUM_LOGGED_VIEW_ANGLES-1) ] = viewAngles;
+	// Save view-angle history only on real simulation frames. Local MP
+	// prediction can rerun the same game time with advancing framenum, and
+	// indexing this ring buffer by framenum in that case exaggerates the
+	// view-weapon lag/jitter.
+	if ( gameLocal.isNewFrame ) {
+		loggedViewAngles[ currentLoggedViewAngles & ( NUM_LOGGED_VIEW_ANGLES - 1 ) ] = viewAngles;
+		currentLoggedViewAngles++;
+	}
 }
 
 /*
@@ -10802,11 +10813,12 @@ idAngles idPlayer::GunTurningOffset( void ) {
 
 	a.Zero();
 
-	if ( gameLocal.framenum < NUM_LOGGED_VIEW_ANGLES ) {
+	if ( currentLoggedViewAngles < NUM_LOGGED_VIEW_ANGLES ) {
 		return a;
 	}
 
-	idAngles current = loggedViewAngles[ gameLocal.framenum & (NUM_LOGGED_VIEW_ANGLES-1) ];
+	const int currentIndex = ( currentLoggedViewAngles - 1 ) & ( NUM_LOGGED_VIEW_ANGLES - 1 );
+	idAngles current = loggedViewAngles[ currentIndex ];
 
 	idAngles	av, base;
 	int weaponAngleOffsetAverages;
@@ -10817,8 +10829,8 @@ idAngles idPlayer::GunTurningOffset( void ) {
 	av = current;
 
 	// calcualte this so the wrap arounds work properly
-	for ( int j = 1 ; j < weaponAngleOffsetAverages ; j++ ) {
-		idAngles a2 = loggedViewAngles[ ( gameLocal.framenum - j ) & (NUM_LOGGED_VIEW_ANGLES-1) ];
+	for ( int j = 1 ; j < weaponAngleOffsetAverages && j < currentLoggedViewAngles ; j++ ) {
+		idAngles a2 = loggedViewAngles[ ( currentLoggedViewAngles - 1 - j ) & ( NUM_LOGGED_VIEW_ANGLES - 1 ) ];
 
 		idAngles delta = a2 - current;
 
@@ -11240,14 +11252,22 @@ void idPlayer::CalculateFirstPersonView( void ) {
 
 void idPlayer::UpdatePresentationViewState( void ) {
 	const bool exactGameFrameRate = ( gameLocal.GetMHz() == common->GetUserCmdHz() );
-	const int realFrame = gameLocal.framenum;
 	const idVec3 simViewOrigin = firstPersonViewOrigin;
 	const idMat3 simViewAxis = firstPersonViewAxis;
 	const float currentFov = CalcFov( true );
+	const float predictionDecayTime = net_predictionErrorDecay.GetFloat();
+	const bool activePredictionViewSmoothing =
+		WantSmoothing() &&
+		predictionDecayTime > 0 &&
+		predictionErrorTime > 0 &&
+		gameLocal.time >= predictionErrorTime &&
+		( gameLocal.time - predictionErrorTime ) < predictionDecayTime &&
+		( predictionOriginError.LengthSqr() > Square( 0.01f ) ||
+			predictionAnglesError.LengthSqr() > Square( 0.01f ) );
 
 	if ( presentationViewTime < 0 ) {
 		presentationViewTime = gameLocal.time;
-		presentationRealFrame = realFrame;
+		presentationRealFrame = gameLocal.framenum;
 		presentationCanInterpolate = false;
 		presentationPrevViewOrigin = simViewOrigin;
 		presentationPrevViewAxis = simViewAxis;
@@ -11261,7 +11281,9 @@ void idPlayer::UpdatePresentationViewState( void ) {
 	if ( presentationViewTime != gameLocal.time ) {
 		const float maxOriginDelta = 12.0f;
 		const float maxAngleDelta = 50.0f;
-		const bool sequentialFrame = ( realFrame == presentationRealFrame + 1 );
+		const int deltaTime = gameLocal.time - presentationViewTime;
+		const int maxSequentialDelta = static_cast<int>( idMath::Ceil( common->GetUserCmdMsecFloat() ) );
+		const bool sequentialFrame = deltaTime > 0 && deltaTime <= maxSequentialDelta;
 		const idVec3 originDelta = simViewOrigin - presentationCurViewOrigin;
 		idAngles anglesDelta = simViewAxis.ToAngles() - presentationCurViewAxis.ToAngles();
 		anglesDelta.Normalize180();
@@ -11276,8 +11298,12 @@ void idPlayer::UpdatePresentationViewState( void ) {
 		presentationCurViewAxis = simViewAxis;
 		presentationCurFov = currentFov;
 		presentationViewTime = gameLocal.time;
-		presentationRealFrame = realFrame;
-		presentationCanInterpolate = exactGameFrameRate && sequentialFrame && smallViewDelta;
+		presentationRealFrame = gameLocal.framenum;
+		// Listen-server clients can still be riding prediction-error decay inside
+		// a nominal game frame; treat that as a discontinuity and snap the
+		// first-person presentation state instead of blending against the older
+		// snapshot, which slings the view weapon around while moving.
+		presentationCanInterpolate = exactGameFrameRate && sequentialFrame && smallViewDelta && !activePredictionViewSmoothing;
 		if ( !presentationCanInterpolate ) {
 			presentationPrevViewOrigin = presentationCurViewOrigin;
 			presentationPrevViewAxis = presentationCurViewAxis;
@@ -11289,6 +11315,12 @@ void idPlayer::UpdatePresentationViewState( void ) {
 	presentationCurViewOrigin = simViewOrigin;
 	presentationCurViewAxis = simViewAxis;
 	presentationCurFov = currentFov;
+	if ( activePredictionViewSmoothing ) {
+		presentationCanInterpolate = false;
+		presentationPrevViewOrigin = presentationCurViewOrigin;
+		presentationPrevViewAxis = presentationCurViewAxis;
+		presentationPrevFov = presentationCurFov;
+	}
 }
 
 void idPlayer::GetPresentationViewPos( idVec3 &origin, idMat3 &axis ) const {
@@ -11307,6 +11339,18 @@ void idPlayer::GetPresentationViewPos( idVec3 &origin, idMat3 &axis ) const {
 	const float fraction = Player_GetPresentationViewBlendFraction();
 	origin.Lerp( presentationPrevViewOrigin, presentationCurViewOrigin, fraction );
 	axis = Player_InterpolateAxis( presentationPrevViewAxis, presentationCurViewAxis, fraction );
+}
+
+bool idPlayer::CanInterpolatePresentationView( void ) const {
+	return presentationViewTime >= 0 && presentationCanInterpolate;
+}
+
+float idPlayer::GetPresentationViewBlendFraction( void ) const {
+	if ( !CanInterpolatePresentationView() ) {
+		return 1.0f;
+	}
+
+	return Player_GetPresentationViewBlendFraction();
 }
 
 float idPlayer::GetPresentationFov( void ) {

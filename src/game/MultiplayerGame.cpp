@@ -5255,6 +5255,10 @@ bool idMultiplayerGame::Draw( int clientNum ) {
 		}
 	}
 
+	// Match the single-player draw path so the local viewmodel is re-aligned
+	// against the same presentation snapshot as the camera before rendering.
+	gameLocal.PreparePlayerSceneForRender( viewPlayer );
+
 	if ( !viewPlayer->GetRenderView() ) {
 		return false;
 	}

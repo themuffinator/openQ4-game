@@ -239,6 +239,24 @@ typedef struct entityNetEvent_s {
 	struct entityNetEvent_s *prev;
 } entityNetEvent_t;
 
+struct hitscanVisualInfo_t {
+	hitscanVisualInfo_t() {
+		Clear();
+	}
+
+	void Clear() {
+		endOrigin.Zero();
+		impactAxisDir.Zero();
+		impactMoverEntityNum = -1;
+		impactEffect = NULL;
+	}
+
+	idVec3			endOrigin;
+	idVec3			impactAxisDir;
+	int				impactMoverEntityNum;
+	const idDecl *	impactEffect;
+};
+
 enum {
 	GAME_RELIABLE_MESSAGE_SPAWN_PLAYER,
 	GAME_RELIABLE_MESSAGE_DELETE_ENT,
@@ -288,6 +306,7 @@ enum {
 	GAME_UNRELIABLE_MESSAGE_EVENT,
 	GAME_UNRELIABLE_MESSAGE_EFFECT,
 	GAME_UNRELIABLE_MESSAGE_HITSCAN,
+	GAME_UNRELIABLE_MESSAGE_HITSCAN_IMPACT,
 	GAME_UNRELIABLE_MESSAGE_VOICEDATA_SERVER
 };
 
@@ -606,6 +625,7 @@ public:
 // RAVEN BEGIN
 // bdube: client hitscan
 	virtual void			ClientHitScan( const idBitMsg &msg );
+	virtual void			ClientHitScanImpact( const idBitMsg &msg );
 // jscott: for effects system
 	virtual void			StartViewEffect( int type, float time, float scale );
 	virtual void			GetPlayerView( idVec3 &origin, idMat3 &axis );
@@ -876,7 +896,7 @@ public:
 	void					CheckPlayerWhizzBy	( idVec3 start, idVec3 end, idEntity* hitEnt, idEntity *attacker );
 // bdube: added hitscan
 // twhitaker: added additionalIgnore parameter
-	idEntity*				HitScan				( const idDict& hitscanDef, const idVec3& origin, const idVec3& dir, const idVec3& fxOrigin, idEntity* owner = NULL, bool noFX = false, float damageScale = 1.0f, idEntity * additionalIgnore = NULL, int *areas = NULL );
+	idEntity*				HitScan				( const idDict& hitscanDef, const idVec3& origin, const idVec3& dir, const idVec3& fxOrigin, idEntity* owner = NULL, bool noFX = false, float damageScale = 1.0f, idEntity * additionalIgnore = NULL, int *areas = NULL, hitscanVisualInfo_t *visualInfo = NULL );
 // bdube: added effect calls
 	virtual rvClientEffect*	PlayEffect			( const idDecl *effect, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, bool predictedBit = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one );
 	rvClientEffect*			PlayEffect			( const idDict& args, const char* effectName, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, bool predictedBit = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one );
@@ -963,7 +983,7 @@ public:
 
 	void					SendUnreliableMessage( const idBitMsg &msg, const int clientNum );
 	// note: listen server client is always excluded
-	void					SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1 = -1, int area2 = -1 );
+	void					SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1 = -1, int area2 = -1, int excludeClient = -1 );
 
 	void					RepeaterAppendUnreliableMessage( int icl, const idBitMsg &msg, const idBitMsg *header = NULL );
 	void					RepeaterUnreliableMessage( const idBitMsg &msg, const int clientNum, const idBitMsg *header = NULL );

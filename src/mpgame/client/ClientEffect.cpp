@@ -52,6 +52,7 @@ void rvClientEffect::Init ( const idDecl *effect ) {
 	renderEffect.referenceSoundHandle = -1;
 	effectDefHandle = -1;
 	endOriginJoint	= INVALID_JOINT;
+	allowCurrentFramePresentationRefresh = false;
 }
 
 /*
@@ -165,7 +166,7 @@ rvClientEffect::UpdatePresentationEffect
 */
 void rvClientEffect::UpdatePresentationEffect( void ) {
 	const bool allowCurrentFrameViewWeaponRefresh = bindMaster && bindMaster->IsType( rvViewWeapon::GetClassType() );
-	if ( ( gameLocal.isNewFrame && !allowCurrentFrameViewWeaponRefresh ) || effectDefHandle < 0 ) {
+	if ( ( gameLocal.isNewFrame && !allowCurrentFrameViewWeaponRefresh && !allowCurrentFramePresentationRefresh ) || effectDefHandle < 0 ) {
 		return;
 	}
 
@@ -415,6 +416,7 @@ void rvClientEffect::Restore( idRestoreGame *savefile ) {
 	savefile->ReadRenderEffect( renderEffect );
 	effectDefHandle = -1;
 	savefile->ReadJoint( endOriginJoint );
+	allowCurrentFramePresentationRefresh = false;
 }
 
 /*

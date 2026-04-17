@@ -498,6 +498,8 @@ public:
 	void					CalculateFirstPersonView( void );
 	void					UpdatePresentationViewState( void );
 	void					GetPresentationViewPos( idVec3 &origin, idMat3 &axis ) const;
+	bool					CanInterpolatePresentationView( void ) const;
+	float					GetPresentationViewBlendFraction( void ) const;
 	float					GetPresentationFov( void );
 	void					UpdatePresentationEntities( void );
 	
@@ -887,6 +889,7 @@ private:
 
 	static const int		NUM_LOGGED_VIEW_ANGLES = 64;		// for weapon turning angle offsets
 	idAngles				loggedViewAngles[NUM_LOGGED_VIEW_ANGLES];	// [gameLocal.framenum&(LOGGED_VIEW_ANGLES-1)]
+	int						currentLoggedViewAngles;
 	static const int		NUM_LOGGED_ACCELS = 16;			// for weapon turning angle offsets
 	loggedAccel_t			loggedAccel[NUM_LOGGED_ACCELS];	// [currentLoggedAccel & (NUM_LOGGED_ACCELS-1)]
 	int						currentLoggedAccel;

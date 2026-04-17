@@ -516,6 +516,8 @@ public:
 	void					CalculateFirstPersonView( void );
 	void					UpdatePresentationViewState( void );
 	void					GetPresentationViewPos( idVec3 &origin, idMat3 &axis ) const;
+	bool					CanInterpolatePresentationView( void ) const;
+	float					GetPresentationViewBlendFraction( void ) const;
 	float					GetPresentationFov( void );
 	void					UpdatePresentationEntities( void );
 	
@@ -920,7 +922,8 @@ private:
 	idCamera *				privateCameraView;
 
 	static const int		NUM_LOGGED_VIEW_ANGLES = 64;		// for weapon turning angle offsets
-	idAngles				loggedViewAngles[NUM_LOGGED_VIEW_ANGLES];	// [gameLocal.framenum&(LOGGED_VIEW_ANGLES-1)]
+	idAngles				loggedViewAngles[NUM_LOGGED_VIEW_ANGLES];	// [currentLoggedViewAngles & (NUM_LOGGED_VIEW_ANGLES-1)]
+	int						currentLoggedViewAngles;
 	static const int		NUM_LOGGED_ACCELS = 16;			// for weapon turning angle offsets
 	loggedAccel_t			loggedAccel[NUM_LOGGED_ACCELS];	// [currentLoggedAccel & (NUM_LOGGED_ACCELS-1)]
 	int						currentLoggedAccel;
@@ -1071,6 +1074,7 @@ private:
 	void					SpectateCycle( void );
 	idAngles				GunTurningOffset( void );
 	idVec3					GunAcceleratingOffset( void );
+	void					LogWeaponAcceleration( const idVec3 &dir );
 
 	void					CrashLand( const idVec3 &oldOrigin, const idVec3 &oldVelocity );
 	void					BobCycle( const idVec3 &pushVelocity );

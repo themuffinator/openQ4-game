@@ -37,6 +37,7 @@ public:
 
 	void				SetEndOrigin	( const idVec3& endOrigin );
 	void				SetEndOrigin	( jointHandle_t joint ) { endOriginJoint = joint; }
+	void				SetAllowCurrentFramePresentationRefresh( bool allow ) { allowCurrentFramePresentationRefresh = allow; }
 	
 	void				SetGravity		( const idVec3& gravity ) { renderEffect.gravity = gravity; }
 
@@ -55,6 +56,7 @@ protected:
 	renderEffect_t		renderEffect;
 	int					effectDefHandle;
 	jointHandle_t		endOriginJoint;
+	bool				allowCurrentFramePresentationRefresh;
 };
 
 ID_INLINE void rvClientEffect::SetEndOrigin	( const idVec3& endOrigin ) {
