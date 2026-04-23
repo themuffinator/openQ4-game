@@ -39,8 +39,8 @@ private:
 //	abahr: making Push public to allow parms to be put on stack
 public:
 	void				PushString( const char *string );
-	void				Push( intptr_t value );
-	void				PushVector(const idVec3& vector);
+	void				Push( int value );
+	void				PushVector( const idVec3 &vector );
 private:
 // RAVEN END
 	const char			*FloatToString( float value );
@@ -122,12 +122,12 @@ ID_INLINE void idInterpreter::PopParms( int numParms ) {
 idInterpreter::Push
 ====================
 */
-ID_INLINE void idInterpreter::Push( intptr_t value ) {
-	if ( localstackUsed + sizeof(intptr_t) > LOCALSTACK_SIZE ) {
+ID_INLINE void idInterpreter::Push( int value ) {
+	if ( localstackUsed + sizeof( int ) > LOCALSTACK_SIZE ) {
 		Error( "Push: locals stack overflow\n" );
 	}
-	*(intptr_t* )&localstack[ localstackUsed ]	= value;
-	localstackUsed += sizeof(intptr_t);
+	*( int * )&localstack[ localstackUsed ]	= value;
+	localstackUsed += sizeof( int );
 }
 
 /*
@@ -135,12 +135,13 @@ ID_INLINE void idInterpreter::Push( intptr_t value ) {
 idInterpreter::PushVector
 ====================
 */
-ID_INLINE void idInterpreter::PushVector(const idVec3& vector) {
-	if (localstackUsed + E_EVENT_SIZEOF_VEC > LOCALSTACK_SIZE) {
-		Error("Push: locals stack overflow\n");
+ID_INLINE void idInterpreter::PushVector( const idVec3 &vector ) {
+	if ( localstackUsed + sizeof( idVec3 ) > LOCALSTACK_SIZE ) {
+		Error( "Push: locals stack overflow\n" );
 	}
-	*(idVec3*)&localstack[localstackUsed] = vector;
-	localstackUsed += E_EVENT_SIZEOF_VEC;
+	Push( *reinterpret_cast<const int *>( &vector.x ) );
+	Push( *reinterpret_cast<const int *>( &vector.y ) );
+	Push( *reinterpret_cast<const int *>( &vector.z ) );
 }
 
 /*

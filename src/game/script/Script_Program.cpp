@@ -12,20 +12,20 @@ idTypeDef	type_namespace( ev_namespace, &def_namespace, "namespace", sizeof(intp
 // RAVEN BEGIN
 // abahr
 rvTypeDefString	type_string( ev_string, &def_string, "string", MAX_STRING_LEN, NULL );
-rvTypeDefFloat	type_float( ev_float, &def_float, "float", sizeof(intptr_t), NULL );
-rvTypeDefVec3	type_vector( ev_vector, &def_vector, "vector", E_EVENT_SIZEOF_VEC, NULL );
-rvTypeDefEntity	type_entity( ev_entity, &def_entity, "entity", sizeof(intptr_t), NULL );					// stored as entity number pointer
+rvTypeDefFloat	type_float( ev_float, &def_float, "float", sizeof( float ), NULL );
+rvTypeDefVec3	type_vector( ev_vector, &def_vector, "vector", sizeof( idVec3 ), NULL );
+rvTypeDefEntity	type_entity( ev_entity, &def_entity, "entity", sizeof( int ), NULL );						// stored as entity number
 // RAVEN END
-idTypeDef	type_field( ev_field, &def_field, "field", sizeof(intptr_t), NULL );
+idTypeDef	type_field( ev_field, &def_field, "field", sizeof( int ), NULL );
 idTypeDef	type_function( ev_function, &def_function, "function", sizeof(intptr_t), &type_void );
-idTypeDef	type_virtualfunction( ev_virtualfunction, &def_virtualfunction, "virtual function", sizeof(intptr_t), NULL );
+idTypeDef	type_virtualfunction( ev_virtualfunction, &def_virtualfunction, "virtual function", sizeof( int ), NULL );
 idTypeDef	type_pointer( ev_pointer, &def_pointer, "pointer", sizeof(intptr_t), NULL );
-idTypeDef	type_object( ev_object, &def_object, "object", sizeof(intptr_t), NULL );					// stored as entity number pointer
-idTypeDef	type_jumpoffset( ev_jumpoffset, &def_jumpoffset, "<jump>", sizeof(intptr_t), NULL );		// only used for jump opcodes
-idTypeDef	type_argsize( ev_argsize, &def_argsize, "<argsize>", sizeof(intptr_t), NULL );				// only used for function call and thread opcodes
+idTypeDef	type_object( ev_object, &def_object, "object", sizeof( int ), NULL );						// stored as entity number
+idTypeDef	type_jumpoffset( ev_jumpoffset, &def_jumpoffset, "<jump>", sizeof( int ), NULL );			// only used for jump opcodes
+idTypeDef	type_argsize( ev_argsize, &def_argsize, "<argsize>", sizeof( int ), NULL );					// only used for function call and thread opcodes
 // RAVEN BEGIN
 // abahr
-rvTypeDefBool	type_boolean( ev_boolean, &def_boolean, "boolean", sizeof(intptr_t), NULL );
+rvTypeDefBool	type_boolean( ev_boolean, &def_boolean, "boolean", sizeof( int ), NULL );
 // RAVEN END
 
 idVarDef	def_void( &type_void );
@@ -1498,6 +1498,7 @@ idVarDef *idProgram::AllocDef( idTypeDef *type, const char *name, idVarDef *scop
 	idVarDef	*def_x;
 	idVarDef	*def_y;
 	idVarDef	*def_z;
+	const int	vectorComponentOffsets[ 3 ] = { 0, sizeof( float ), sizeof( float ) * 2 };
 
 	// allocate a new def
 	def = new idVarDef( type );
@@ -1529,29 +1530,68 @@ idVarDef *idProgram::AllocDef( idTypeDef *type, const char *name, idVarDef *scop
 			// origin can be accessed as origin_x, origin_y, and origin_z
 			sprintf( element, "%s_x", def->Name() );
 			def_x = AllocDef( type, element, scope, constant );
+			def_x->value.ptrOffset = def->value.ptrOffset + vectorComponentOffsets[ 0 ];
 
 			sprintf( element, "%s_y", def->Name() );
 			def_y = AllocDef( type, element, scope, constant );
-			def_y->value.ptrOffset = def_x->value.ptrOffset + type_float.Size();
+			def_y->value.ptrOffset = def->value.ptrOffset + vectorComponentOffsets[ 1 ];
 
 			sprintf( element, "%s_z", def->Name() );
 			def_z = AllocDef( type, element, scope, constant );
-			def_z->value.ptrOffset = def_y->value.ptrOffset + type_float.Size();
+			def_z->value.ptrOffset = def->value.ptrOffset + vectorComponentOffsets[ 2 ];
 		} else {
+			if ( scope->Type() == ev_function ) {
+				def->value.stackOffset	= scope->value.functionPtr->locals;
+				def->initialized		= idVarDef::stackVariable;
+				scope->value.functionPtr->locals += type->Size();
+			} else {
+				def->value.bytePtr = &variables[ numVariables ];
+				numVariables += def->TypeDef()->Size();
+				if ( numVariables > sizeof( variables ) ) {
+					throw idCompileError( va( "Exceeded global memory size (%d bytes)", sizeof( variables ) ) );
+				}
+
+				memset( def->value.bytePtr, 0, def->TypeDef()->Size() );
+			}
+
 			// make automatic defs for the vectors elements
 			// origin can be accessed as origin_x, origin_y, and origin_z
+			def_x = new idVarDef( &type_float );
+			def_x->scope		= scope;
+			def_x->numUsers		= 1;
+			def_x->num			= varDefs.Append( def_x );
 			sprintf( element, "%s_x", def->Name() );
-			def_x = AllocDef( &type_float, element, scope, constant );
+			AddDefToNameList( def_x, element );
 
+			def_y = new idVarDef( &type_float );
+			def_y->scope		= scope;
+			def_y->numUsers		= 1;
+			def_y->num			= varDefs.Append( def_y );
 			sprintf( element, "%s_y", def->Name() );
-			def_y = AllocDef( &type_float, element, scope, constant );
+			AddDefToNameList( def_y, element );
 
+			def_z = new idVarDef( &type_float );
+			def_z->scope		= scope;
+			def_z->numUsers		= 1;
+			def_z->num			= varDefs.Append( def_z );
 			sprintf( element, "%s_z", def->Name() );
-			def_z = AllocDef( &type_float, element, scope, constant );
+			AddDefToNameList( def_z, element );
 
-			// point the vector def to the x coordinate
-			def->value			= def_x->value;
-			def->initialized	= def_x->initialized;
+			if ( def->initialized == idVarDef::stackVariable ) {
+				def_x->value.stackOffset = def->value.stackOffset + vectorComponentOffsets[ 0 ];
+				def_y->value.stackOffset = def->value.stackOffset + vectorComponentOffsets[ 1 ];
+				def_z->value.stackOffset = def->value.stackOffset + vectorComponentOffsets[ 2 ];
+				def_x->initialized = idVarDef::stackVariable;
+				def_y->initialized = idVarDef::stackVariable;
+				def_z->initialized = idVarDef::stackVariable;
+			} else {
+				def_x->value.bytePtr = def->value.bytePtr + vectorComponentOffsets[ 0 ];
+				def_y->value.bytePtr = def->value.bytePtr + vectorComponentOffsets[ 1 ];
+				def_z->value.bytePtr = def->value.bytePtr + vectorComponentOffsets[ 2 ];
+				def_x->initialized = def->initialized;
+				def_y->initialized = def->initialized;
+				def_z->initialized = def->initialized;
+			}
 		}
 	} else if ( scope->TypeDef()->Inherits( &type_object ) ) {
 		//
