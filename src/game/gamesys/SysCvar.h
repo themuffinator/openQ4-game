@@ -340,6 +340,8 @@ extern idCVar	rb_showContacts;
 // RAVEN END
 
 extern idCVar	g_testPostProcess;
+extern idCVar	g_autoExecAfterMapLoad;
+extern idCVar	g_autoExecAfterMapLoadDelayMs;
 extern idCVar	g_autoScreenshot;
 extern idCVar	g_autoScreenshotDelayMs;
 extern idCVar	g_autoScreenshotQuit;

@@ -537,6 +537,8 @@ idCVar g_currentPlayback(			"g_currentPlayback",		"",				CVAR_GAME, "name of pla
 // RAVEN END
 idCVar g_testModelRotate(			"g_testModelRotate",		"0",			CVAR_GAME, "test model rotation speed" );
 idCVar g_testPostProcess(			"g_testPostProcess",		"",				CVAR_GAME, "name of material to draw over screen" );
+idCVar g_autoExecAfterMapLoad(		"g_autoExecAfterMapLoad",	"",				CVAR_GAME | CVAR_NOCHEAT, "exec a cfg path once after map activation for automated validation" );
+idCVar g_autoExecAfterMapLoadDelayMs( "g_autoExecAfterMapLoadDelayMs", "1000",	CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "delay in ms after map activation before executing g_autoExecAfterMapLoad" );
 idCVar g_autoScreenshot(			"g_autoScreenshot",			"0",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "when enabled, take a screenshot after map load" );
 idCVar g_autoScreenshotDelayMs(	"g_autoScreenshotDelayMs",	"10000",		CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "delay in ms after map load before taking an auto screenshot" );
 idCVar g_autoScreenshotQuit(		"g_autoScreenshotQuit",		"1",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "quit after taking an auto screenshot" );

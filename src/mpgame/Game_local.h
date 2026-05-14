@@ -475,6 +475,8 @@ public:
 	int						time;					// in msec
 	int						msec;					// time since last update in milliseconds
 	int						mHz;					// hertz
+	int						autoExecAfterMapLoadStartTime;
+	bool					autoExecAfterMapLoadPending;
 
 	int						vacuumAreaNum;			// -1 if level doesn't have any outside areas
 
@@ -561,6 +563,7 @@ public:
 	virtual	void			MenuFrame( void );
 	virtual void			RepeaterFrame( const userOrigin_t *clientOrigins, bool lastCatchupFrame, int serverGameFrame );
 	virtual bool			Draw( int clientNum );
+	void					CheckAutoExecAfterMapLoad( void );
 	virtual escReply_t		HandleESC( idUserInterface **gui );
 	virtual idUserInterface	*StartMenu( void );
 	virtual const char *	HandleGuiCommands( const char *menuCommand );

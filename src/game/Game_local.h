@@ -424,6 +424,8 @@ public:
 	int						time;					// in msec
 	int						msec;					// time since last update in milliseconds
 	int						mHz;					// hertz
+	int						autoExecAfterMapLoadStartTime;
+	bool					autoExecAfterMapLoadPending;
 	int						autoScreenshotStartTime;
 	bool					autoScreenshotPending;
 	int						autoMachinegunImpactStartTime;
@@ -520,6 +522,7 @@ public:
 // RAVEN END
 	virtual void			RepeaterFrame( const userOrigin_t *clientOrigins, bool lastCatchupFrame, int spoolTime = 0 ) {};
 	virtual bool			Draw( int clientNum );
+	void					CheckAutoExecAfterMapLoad( void );
 	void					CheckAutoMachinegunImpact( void );
 	void					CheckAutoScreenshot( void );
 	virtual escReply_t		HandleESC( idUserInterface **gui );

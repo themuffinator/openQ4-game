@@ -513,6 +513,8 @@ void idGameLocal::Clear( void ) {
 	framenum = 0;
 	previousTime = 0;
 	time = 0;
+	autoExecAfterMapLoadStartTime = 0;
+	autoExecAfterMapLoadPending = false;
 	autoScreenshotStartTime = 0;
 	autoScreenshotPending = false;
 	autoMachinegunImpactStartTime = 0;
@@ -2259,7 +2261,17 @@ void idGameLocal::InitFromNewMap( const char *mapName, idRenderWorld *renderWorl
 
 
 	gamestate = GAMESTATE_ACTIVE;
-	autoScreenshotStartTime = Sys_Milliseconds();
+	autoExecAfterMapLoadStartTime = Sys_Milliseconds();
+	const char *autoExecAfterMapLoad = g_autoExecAfterMapLoad.GetString();
+	const char *autoExecAfterMapLoadCvar = cvarSystem->GetCVarString( "g_autoExecAfterMapLoad" );
+	autoExecAfterMapLoadPending =
+		( autoExecAfterMapLoad && autoExecAfterMapLoad[ 0 ] != '\0' ) ||
+		( autoExecAfterMapLoadCvar && autoExecAfterMapLoadCvar[ 0 ] != '\0' );
+	if ( autoExecAfterMapLoadPending ) {
+		Printf( "AutoExecAfterMapLoad: armed (delay %d ms)\n", g_autoExecAfterMapLoadDelayMs.GetInteger() );
+	}
+
+	autoScreenshotStartTime = autoExecAfterMapLoadStartTime;
 	const bool gAutoScreenshot = g_autoScreenshot.GetBool();
 	const bool gAutoScreenshotCvar = cvarSystem->GetCVarBool( "g_autoScreenshot" );
 	autoScreenshotPending = gAutoScreenshot || gAutoScreenshotCvar;
@@ -4544,7 +4556,69 @@ bool idGameLocal::Draw( int clientNum ) {
 	gameDebug.DrawHud( );
 // RAVEN END
 	CheckAutoScreenshot();
+	CheckAutoExecAfterMapLoad();
 	return true;
+}
+
+/*
+================
+idGameLocal::CheckAutoExecAfterMapLoad
+
+Execute a one-shot cfg after the first active map frames, for deterministic validation harnesses.
+================
+*/
+void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
+	const char *execPath = g_autoExecAfterMapLoad.GetString();
+	if ( !execPath || execPath[ 0 ] == '\0' ) {
+		execPath = cvarSystem->GetCVarString( "g_autoExecAfterMapLoad" );
+	}
+	const bool wantAutoExec = execPath && execPath[ 0 ] != '\0';
+
+	if ( wantAutoExec ) {
+		if ( !autoExecAfterMapLoadPending ) {
+			autoExecAfterMapLoadPending = true;
+			autoExecAfterMapLoadStartTime = Sys_Milliseconds();
+		}
+	} else if ( autoExecAfterMapLoadPending ) {
+		autoExecAfterMapLoadPending = false;
+	}
+
+	if ( !autoExecAfterMapLoadPending ) {
+		return;
+	}
+
+	const int nowMs = Sys_Milliseconds();
+	int delayMs = g_autoExecAfterMapLoadDelayMs.GetInteger();
+	if ( delayMs < 0 ) {
+		delayMs = 0;
+	}
+	if ( delayMs > 0 && ( nowMs - autoExecAfterMapLoadStartTime ) < delayMs ) {
+		return;
+	}
+
+	bool safePath = true;
+	for ( const char *scan = execPath; scan && *scan; scan++ ) {
+		if ( *scan == '\n' || *scan == '\r' || *scan == ';' || *scan == '"' ) {
+			safePath = false;
+			break;
+		}
+	}
+
+	if ( safePath ) {
+		idCmdArgs execArgs;
+		execArgs.AppendArg( "exec" );
+		execArgs.AppendArg( execPath );
+		common->Printf( "AutoExecAfterMapLoad: exec %s at %d ms\n",
+			execPath,
+			nowMs - autoExecAfterMapLoadStartTime );
+		cmdSystem->BufferCommandArgs( CMD_EXEC_NOW, execArgs );
+	} else {
+		common->Warning( "AutoExecAfterMapLoad: rejected unsafe cfg path '%s'", execPath ? execPath : "" );
+	}
+
+	autoExecAfterMapLoadPending = false;
+	g_autoExecAfterMapLoad.SetString( "" );
+	cvarSystem->SetCVarString( "g_autoExecAfterMapLoad", "" );
 }
 
 /*
