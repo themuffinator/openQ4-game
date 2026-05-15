@@ -95,26 +95,26 @@ static const idMaterial* FindPostProcessMaterial( const char* primaryName, const
 	return NULL;
 }
 
-static void OpenQ4_RenderSceneDirect( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky ) {
+static void OpenQ4_RenderSceneDirect( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky, int renderFlags ) {
 	renderSystem->BindRenderTexture( nullptr, nullptr );
 
 	if ( portalSky ) {
 		renderView_t portalSkyView = *view;
 		portalSky->GetViewParms( &portalSkyView );
-		renderWorld->RenderScene( &portalSkyView );
+		renderWorld->RenderScene( &portalSkyView, ( renderFlags & ~RF_PRIMARY_VIEW ) | RF_DEFER_COMMAND_SUBMIT | RF_PORTAL_SKY );
 	}
 
-	renderWorld->RenderScene( view );
+	renderWorld->RenderScene( view, renderFlags | RF_PENUMBRA_MAP );
 }
 
-static void OpenQ4_RenderSceneWorld( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky ) {
+static void OpenQ4_RenderSceneWorld( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky, int renderFlags ) {
 	if ( portalSky ) {
 		renderView_t portalSkyView = *view;
 		portalSky->GetViewParms( &portalSkyView );
-		renderWorld->RenderScene( &portalSkyView );
+		renderWorld->RenderScene( &portalSkyView, ( renderFlags & ~RF_PRIMARY_VIEW ) | RF_DEFER_COMMAND_SUBMIT | RF_PORTAL_SKY );
 	}
 
-	renderWorld->RenderScene( view );
+	renderWorld->RenderScene( view, renderFlags | RF_PENUMBRA_MAP );
 }
 
 static void OpenQ4_DrawFullScreenMaterial( const idMaterial *material ) {
@@ -302,7 +302,7 @@ void idGameLocal::ResizeRenderTextures(int width, int height) {
 idGameLocal::RenderScene
 ====================
 */
-void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWorld, idCamera* portalSky) {
+void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWorld, idCamera* portalSky, int renderFlags) {
 	if ( view == NULL || renderWorld == NULL ) {
 		return;
 	}
@@ -349,7 +349,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 
 	if ( !canUsePostProcess ) {
 		// Fallback for stock Quake 4 assets or transient render-target invalidation.
-		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky );
+		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
 		return;
 	}
@@ -386,7 +386,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 
 	if ( canUseFastNoPost ) {
 		if ( g_renderFastNoPostDirect.GetBool() ) {
-			OpenQ4_RenderSceneDirect( view, renderWorld, portalSky );
+			OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 			if ( g_renderCaptureCurrentRender.GetBool() ) {
 				renderSystem->CaptureRenderToImage( "_currentRender" );
 			}
@@ -396,7 +396,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 
 		renderSystem->BindRenderTexture( gameRender.forwardRenderPassResolvedRT, nullptr );
 		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky );
+		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky, renderFlags );
 		renderSystem->BindRenderTexture( nullptr, nullptr );
 
 		// The no-post path previously copied _forwardRenderResolvedAlbedo through
@@ -418,7 +418,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		// Clear the color/depth buffers
 		renderSystem->ClearRenderTarget(true, true, 1.0f, 0.0f, 0.0f, 0.0f);
 	
-		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky );
+		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky, renderFlags );
 	}
 	renderSystem->BindRenderTexture(nullptr, nullptr);
 
@@ -484,7 +484,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		finalMaterial = gameRender.casPostProcessMaterial;
 	}
 	if ( finalMaterial == NULL ) {
-		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky );
+		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
 		return;
 	}

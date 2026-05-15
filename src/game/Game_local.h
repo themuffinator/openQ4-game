@@ -1216,7 +1216,7 @@ public:
 
 	int						GetCurrentDemoProtocol( void ) { return demo_protocol; }
 // jmarshall
-	void					RenderScene(const renderView_t* view, idRenderWorld* renderWorld, idCamera* portalSky);
+	void					RenderScene(const renderView_t* view, idRenderWorld* renderWorld, idCamera* portalSky, int renderFlags = RF_NORMAL);
 private:	
 	void					ResizeRenderTextures(int width, int height);
 	void					InitGameRenderSystem(void);

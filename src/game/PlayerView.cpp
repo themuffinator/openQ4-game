@@ -594,7 +594,7 @@ void idPlayerView::SingleView( idUserInterface *hud, const renderView_t *view, i
 		//}
 		//gameRenderWorld->RenderScene( view );
 
-		gameLocal.RenderScene(view, gameRenderWorld, gameLocal.GetPortalSky());
+		gameLocal.RenderScene(view, gameRenderWorld, gameLocal.GetPortalSky(), renderFlags);
 // jmarshall end
 	}
 
