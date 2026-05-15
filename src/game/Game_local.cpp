@@ -2264,11 +2264,12 @@ void idGameLocal::InitFromNewMap( const char *mapName, idRenderWorld *renderWorl
 	autoExecAfterMapLoadStartTime = Sys_Milliseconds();
 	const char *autoExecAfterMapLoad = g_autoExecAfterMapLoad.GetString();
 	const char *autoExecAfterMapLoadCvar = cvarSystem->GetCVarString( "g_autoExecAfterMapLoad" );
-	autoExecAfterMapLoadPending =
+	const bool autoExecAfterMapLoadArmed =
 		( autoExecAfterMapLoad && autoExecAfterMapLoad[ 0 ] != '\0' ) ||
 		( autoExecAfterMapLoadCvar && autoExecAfterMapLoadCvar[ 0 ] != '\0' );
-	if ( autoExecAfterMapLoadPending ) {
-		Printf( "AutoExecAfterMapLoad: armed (delay %d ms)\n", g_autoExecAfterMapLoadDelayMs.GetInteger() );
+	autoExecAfterMapLoadPending = false;
+	if ( autoExecAfterMapLoadArmed ) {
+		Printf( "AutoExecAfterMapLoad: armed for first active draw (delay %d ms)\n", g_autoExecAfterMapLoadDelayMs.GetInteger() );
 	}
 
 	autoScreenshotStartTime = autoExecAfterMapLoadStartTime;
@@ -3502,40 +3503,37 @@ bool idGameLocal::SetupPortalSkyPVS( idPlayer *player ) {
 
 		return( false );
 	}
-// jmarshall - this was a nice optimization but not needed
-	// Allocate room for the area flags
-	//numAreas = gameRenderWorld->NumAreas();
-	//visibleAreas = ( bool * )_alloca( numAreas );
-	//memset( visibleAreas, 0, numAreas );
-	//
-	//// Grab the areas the player can see....
-	//count = player->GetNumPVSAreas();
-	//areaNums = player->GetPVSAreas();
-	//for( i = 0; i < count; i++ ) {
-	//
-	//	// Work out the referenced areas
-	//	gameRenderWorld->FindVisibleAreas( player->GetPhysics()->GetOrigin(), areaNums[i], visibleAreas );
-	//}
-	//
-	//// Do any of the visible areas have a skybox?
-	//for( i = 0; i < numAreas; i++ ) {
-	//
-	//	if( !visibleAreas[i] ) {
-	//
-	//		continue;
-	//	}
-	//
-	//	if( gameRenderWorld->HasSkybox( i ) ) {
-	//
-	//		break;
-	//	}
-	//}
-	//
-	//// .. if any one has a skybox component, then merge in the portal sky
-	//return ( i != numAreas );
 
-	return true;
-// jmarshall end
+	// Allocate room for the area flags
+	numAreas = gameRenderWorld->NumAreas();
+	visibleAreas = ( bool * )_alloca( numAreas );
+	memset( visibleAreas, 0, numAreas );
+
+	// Grab the areas the player can see.
+	count = player->GetNumPVSAreas();
+	areaNums = player->GetPVSAreas();
+	for( i = 0; i < count; i++ ) {
+
+		// Work out the referenced areas.
+		gameRenderWorld->FindVisibleAreas( player->GetPhysics()->GetOrigin(), areaNums[i], visibleAreas );
+	}
+
+	// Do any of the visible areas have a skybox?
+	for( i = 0; i < numAreas; i++ ) {
+
+		if( !visibleAreas[i] ) {
+
+			continue;
+		}
+
+		if( gameRenderWorld->HasSkybox( i ) ) {
+
+			break;
+		}
+	}
+
+	// If any visible area has a skybox component, merge in the portal sky.
+	return ( i != numAreas );
 }
 // RAVEN END
 

@@ -5,7 +5,10 @@
 #include "Game_local.h"
 #include "../renderer/ImageOpts.h"
 
-idCVar g_renderCasUpscale("g_renderCasUpscale", "1", CVAR_BOOL, "jmarshall: toggles cas upscaling");
+idCVar g_renderCasUpscale("g_renderCasUpscale", "0", CVAR_BOOL, "toggles the optional CAS post-process pass when a CAS material is available");
+idCVar g_renderFastNoPost("g_renderFastNoPost", "1", CVAR_BOOL, "render through the direct no-post path when AA, blur, and CAS are disabled");
+idCVar g_renderFastNoPostDirect("g_renderFastNoPostDirect", "1", CVAR_BOOL, "render directly to the backbuffer when the no-post path has no active post-processing work");
+idCVar g_renderCaptureCurrentRender("g_renderCaptureCurrentRender", "0", CVAR_BOOL, "force an end-of-view _currentRender copy instead of relying on on-demand post-process capture");
 
 enum openq4PostAAWarningState_t {
 	OPENQ4_POST_AA_WARNING_NONE = 0,
@@ -102,6 +105,23 @@ static void OpenQ4_RenderSceneDirect( const renderView_t *view, idRenderWorld *r
 	}
 
 	renderWorld->RenderScene( view );
+}
+
+static void OpenQ4_RenderSceneWorld( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky ) {
+	if ( portalSky ) {
+		renderView_t portalSkyView = *view;
+		portalSky->GetViewParms( &portalSkyView );
+		renderWorld->RenderScene( &portalSkyView );
+	}
+
+	renderWorld->RenderScene( view );
+}
+
+static void OpenQ4_DrawFullScreenMaterial( const idMaterial *material ) {
+	renderSystem->DrawStretchPic(
+		0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
+		0.0f, 1.0f, 1.0f, 0.0f,
+		material );
 }
 
 /*
@@ -351,8 +371,46 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	//	return;
 	//}
 
-	// Make sure all of our render textures are the right dimensions for this render.
-	ResizeRenderTextures(renderSystem->GetScreenWidth(), renderSystem->GetScreenHeight());
+	const int requestedMsaaSamples = Max( 0, cvarSystem->GetCVarInteger( "r_multiSamples" ) );
+	const bool blurEnabled = IsSpecialEffectEnabled( SPECIAL_EFFECT_BLUR ) &&
+		( gameRender.blurPostProcessMaterial != NULL );
+	const bool wantsSMAA = ( cvarSystem->GetCVarInteger( "r_postAA" ) == 1 );
+	const bool wantsCAS = g_renderCasUpscale.GetBool() && gameRender.casPostProcessMaterial != NULL;
+
+	const bool canUseFastNoPost =
+		g_renderFastNoPost.GetBool() &&
+		requestedMsaaSamples <= 0 &&
+		!blurEnabled &&
+		!wantsSMAA &&
+		!wantsCAS;
+
+	if ( canUseFastNoPost ) {
+		if ( g_renderFastNoPostDirect.GetBool() ) {
+			OpenQ4_RenderSceneDirect( view, renderWorld, portalSky );
+			if ( g_renderCaptureCurrentRender.GetBool() ) {
+				renderSystem->CaptureRenderToImage( "_currentRender" );
+			}
+			renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
+			return;
+		}
+
+		renderSystem->BindRenderTexture( gameRender.forwardRenderPassResolvedRT, nullptr );
+		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky );
+		renderSystem->BindRenderTexture( nullptr, nullptr );
+
+		// The no-post path previously copied _forwardRenderResolvedAlbedo through
+		// _postProcessAlbedo0 before presenting it. Presenting the resolved scene
+		// material directly removes two full-screen passes without changing pixels.
+		renderSystem->ClearRenderTarget( false, true, 1.0f, 0.0f, 0.0f, 0.0f );
+		OpenQ4_DrawFullScreenMaterial( gameRender.resolvePostProcessMaterial );
+
+		if ( g_renderCaptureCurrentRender.GetBool() ) {
+			renderSystem->CaptureRenderToImage( "_currentRender" );
+		}
+		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
+		return;
+	}
 
 	// Render the scene to the forward render pass rendertexture.
 	renderSystem->BindRenderTexture(gameRender.forwardRenderPassRT, nullptr);
@@ -360,20 +418,9 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		// Clear the color/depth buffers
 		renderSystem->ClearRenderTarget(true, true, 1.0f, 0.0f, 0.0f, 0.0f);
 	
-		// Render our sky first.
-		if (portalSky) {
-			renderView_t portalSkyView = *view;
-			portalSky->GetViewParms(&portalSkyView);
-			renderWorld->RenderScene(&portalSkyView);
-		}
-	
-		// Render the current world.
-		renderWorld->RenderScene(view);
+		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky );
 	}
 	renderSystem->BindRenderTexture(nullptr, nullptr);
-
-	const bool blurEnabled = IsSpecialEffectEnabled( SPECIAL_EFFECT_BLUR ) &&
-		( gameRender.blurPostProcessMaterial != NULL );
 
 	// Resolve our MSAA buffer.
 	renderSystem->ResolveMSAA(
@@ -384,10 +431,9 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	// Resolve pass writes scene color to the post-process source buffer.
 	renderSystem->BindRenderTexture(gameRender.postProcessRT[0], nullptr);
 		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT, 0.0f, 1.0f, 1.0f, 0.0f, gameRender.resolvePostProcessMaterial);
+		OpenQ4_DrawFullScreenMaterial( gameRender.resolvePostProcessMaterial );
 	renderSystem->BindRenderTexture( nullptr, nullptr );
 
-	const bool wantsSMAA = ( cvarSystem->GetCVarInteger( "r_postAA" ) == 1 );
 	if ( wantsSMAA && gameRender.smaaAvailable ) {
 		gameRender.smaaAvailable = EvaluateSMAAAvailability( gameRender );
 	}
@@ -446,12 +492,10 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	// SS_POST_PROCESS stages use depth testing; reset backbuffer depth each frame
 	// so final full-screen composition is deterministic across drivers/devices.
 	renderSystem->ClearRenderTarget( false, true, 1.0f, 0.0f, 0.0f, 0.0f );
-	renderSystem->DrawStretchPic(
-		0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-		0.0f, 1.0f, 1.0f, 0.0f,
-		finalMaterial );
+	OpenQ4_DrawFullScreenMaterial( finalMaterial );
 
-	// Copy everything to _currentRender
-	renderSystem->CaptureRenderToImage("_currentRender");
+	if ( g_renderCaptureCurrentRender.GetBool() ) {
+		renderSystem->CaptureRenderToImage( "_currentRender" );
+	}
 	renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
 }
