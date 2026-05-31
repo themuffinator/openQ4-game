@@ -324,13 +324,14 @@ class rvGravityArea;
 // jmarshall
 struct rvmGameRender_t {
 	idRenderTexture* forwardRenderPassRT;
-	idRenderTexture* postProcessRT[2];
+	idRenderTexture* postProcessRT[3];
 	idRenderTexture* forwardRenderPassResolvedRT;
 	const idMaterial* noPostProcessMaterial;
 	const idMaterial* casPostProcessMaterial;
 	const idMaterial* blurPostProcessMaterial;
 	const idMaterial* blackPostProcessMaterial;
 	const idMaterial* resolvePostProcessMaterial;
+	const idMaterial* copyPostProcess1Material;
 	const idMaterial* smaaEdgePostProcessMaterial;
 	const idMaterial* smaaWeightsPostProcessMaterial;
 	const idMaterial* smaaBlendPostProcessMaterial;

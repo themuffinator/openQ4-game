@@ -50,7 +50,9 @@ static bool EvaluateSMAAAvailability( rvmGameRender_t& gameRender ) {
 			( gameRender.smaaBlendPostProcessMaterial != NULL ) ? gameRender.smaaBlendPostProcessMaterial->GetName() : "postprocess/smaa_blend" ) &&
 		renderSystem->ValidateSMAALookupTextures() &&
 		( gameRender.postProcessRT[0] != NULL ) &&
-		( gameRender.postProcessRT[1] != NULL );
+		( gameRender.postProcessRT[1] != NULL ) &&
+		( gameRender.postProcessRT[2] != NULL ) &&
+		IsUsablePostProcessMaterial( gameRender.copyPostProcess1Material );
 }
 
 static bool OpenQ4_BuildPortalSkyCaptureView( const renderView_t *view, renderView_t *portalSkyView ) {
@@ -112,6 +114,14 @@ static void OpenQ4_RenderSceneDirect( const renderView_t *view, idRenderWorld *r
 	renderWorld->RenderScene( view, renderFlags | RF_PENUMBRA_MAP );
 }
 
+static void OpenQ4_BindSceneRenderTexture( idRenderTexture *renderTexture ) {
+	// Mark game-level 3D scene targets as feedback-capable so stock materials
+	// that sample _currentRender, including heat haze, get an on-demand copy of
+	// the active scene FBO. Fullscreen post passes bind with a NULL feedback
+	// target to keep their source textures stable.
+	renderSystem->BindRenderTexture( renderTexture, renderTexture );
+}
+
 static void OpenQ4_RenderSceneWorld( const renderView_t *view, idRenderWorld *renderWorld, idCamera *portalSky, int renderFlags ) {
 	if ( portalSky ) {
 		renderView_t portalSkyView = *view;
@@ -129,6 +139,41 @@ static void OpenQ4_DrawFullScreenMaterial( const idMaterial *material ) {
 		material );
 }
 
+static void OpenQ4_ApplySMAA( rvmGameRender_t& gameRender ) {
+	// Pass 1: edge detection into _postProcessAlbedo1.
+	renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
+	renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+	OpenQ4_DrawFullScreenMaterial( gameRender.smaaEdgePostProcessMaterial );
+
+	// Pass 2: blending weight calculation into _postProcessAlbedo0.
+	renderSystem->BindRenderTexture( gameRender.postProcessRT[0], nullptr );
+	renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+	OpenQ4_DrawFullScreenMaterial( gameRender.smaaWeightsPostProcessMaterial );
+
+	// Pass 3: neighborhood blending into _postProcessAlbedo1, then copy the
+	// final SMAA output back into _postProcessAlbedo0 for the rest of the post stack.
+	renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
+	renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+	OpenQ4_DrawFullScreenMaterial( gameRender.smaaBlendPostProcessMaterial );
+
+	// Normalize the SMAA result back to _postProcessAlbedo0 so blur, CAS, and
+	// the final present path keep a single post-process source contract.
+	renderSystem->BindRenderTexture( gameRender.postProcessRT[0], nullptr );
+	renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+	OpenQ4_DrawFullScreenMaterial( gameRender.copyPostProcess1Material );
+	renderSystem->BindRenderTexture( nullptr, nullptr );
+}
+
+static const idMaterial* OpenQ4_SelectFinalPostProcessMaterial( rvmGameRender_t& gameRender, bool blurEnabled ) {
+	if ( blurEnabled ) {
+		return gameRender.blurPostProcessMaterial;
+	}
+	if ( g_renderCasUpscale.GetBool() && gameRender.casPostProcessMaterial != NULL ) {
+		return gameRender.casPostProcessMaterial;
+	}
+	return gameRender.noPostProcessMaterial;
+}
+
 /*
 ========================
 idGameLocal::ShutdownGameRenderSystem
@@ -139,7 +184,7 @@ void idGameLocal::ShutdownGameRenderSystem( void ) {
 		renderSystem->SetPortalSkyCaptureViewCallback( NULL );
 	}
 
-	for ( int i = 0; i < 2; i++ ) {
+	for ( int i = 0; i < 3; i++ ) {
 		if ( gameRender.postProcessRT[i] != NULL ) {
 			renderSystem->DestroyRenderTexture( gameRender.postProcessRT[i] );
 			gameRender.postProcessRT[i] = NULL;
@@ -160,6 +205,7 @@ void idGameLocal::ShutdownGameRenderSystem( void ) {
 	gameRender.blurPostProcessMaterial = NULL;
 	gameRender.blackPostProcessMaterial = NULL;
 	gameRender.resolvePostProcessMaterial = NULL;
+	gameRender.copyPostProcess1Material = NULL;
 	gameRender.smaaEdgePostProcessMaterial = NULL;
 	gameRender.smaaWeightsPostProcessMaterial = NULL;
 	gameRender.smaaBlendPostProcessMaterial = NULL;
@@ -201,8 +247,10 @@ void idGameLocal::InitGameRenderSystem(void) {
 
 	{
 		idImageOpts opts;
-		// Keep scene lighting in FP16 until the final fullscreen presentation pass.
-		opts.format = FMT_RGBA16F;
+		// The legacy Quake 4 light stack depends on LDR framebuffer clamping
+		// between blend/light-scale passes. Keep the game-level post chain LDR
+		// so post AA preserves stock scene color instead of creating an HDR path.
+		opts.format = FMT_RGBA8;
 		opts.colorFormat = CFM_DEFAULT;
 		opts.numLevels = 1;
 		opts.textureType = TT_2D;
@@ -212,20 +260,18 @@ void idGameLocal::InitGameRenderSystem(void) {
 		opts.numMSAASamples = requestedMsaaSamples;
 
 		idImage *albedoImage = renderSystem->CreateImage("_forwardRenderAlbedo", &opts, TF_LINEAR);
-		idImage *emissiveImage = renderSystem->CreateImage("_forwardRenderEmissive", &opts, TF_LINEAR);
 
 		opts.numMSAASamples = requestedMsaaSamples;
 		opts.format = FMT_DEPTH_STENCIL;
 		idImage *depthImage = renderSystem->CreateImage("_forwardRenderDepth", &opts, TF_LINEAR);
 
-		gameRender.forwardRenderPassRT = renderSystem->CreateRenderTexture(albedoImage, depthImage, emissiveImage);
+		gameRender.forwardRenderPassRT = renderSystem->CreateRenderTexture(albedoImage, depthImage);
 	}
 
-	for(int i = 0; i < 2; i++)
+	for(int i = 0; i < 3; i++)
 	{
 		idImageOpts opts;
-		// Ping-pong post-process buffers stay FP16 so bloom and grading retain highlight headroom.
-		opts.format = FMT_RGBA16F;
+		opts.format = FMT_RGBA8;
 		opts.colorFormat = CFM_DEFAULT;
 		opts.numLevels = 1;
 		opts.textureType = TT_2D;
@@ -243,7 +289,7 @@ void idGameLocal::InitGameRenderSystem(void) {
 
 	{
 		idImageOpts opts;
-		opts.format = FMT_RGBA16F;
+		opts.format = FMT_RGBA8;
 		opts.colorFormat = CFM_DEFAULT;
 		opts.numLevels = 1;
 		opts.textureType = TT_2D;
@@ -253,13 +299,12 @@ void idGameLocal::InitGameRenderSystem(void) {
 		opts.numMSAASamples = 0;
 
 		idImage *albedoImage = renderSystem->CreateImage("_forwardRenderResolvedAlbedo", &opts, TF_LINEAR);
-		idImage *emissiveImage = renderSystem->CreateImage("_forwardRenderResolvedEmissive", &opts, TF_LINEAR);
 		// Match the forward pass depth attachment format so depth resolves/blits are valid
 		// on drivers that reject DEPTH_STENCIL -> DEPTH-only copies.
 		opts.format = FMT_DEPTH_STENCIL;
 		idImage *depthImage = renderSystem->CreateImage("_forwardRenderResolvedDepth", &opts, TF_LINEAR);
 
-		gameRender.forwardRenderPassResolvedRT = renderSystem->CreateRenderTexture(albedoImage, depthImage, emissiveImage);
+		gameRender.forwardRenderPassResolvedRT = renderSystem->CreateRenderTexture(albedoImage, depthImage);
 	}
 
 	gameRender.blackPostProcessMaterial = FindPostProcessMaterial( "postprocess/black", "postprocess/openq4_black" );
@@ -267,6 +312,7 @@ void idGameLocal::InitGameRenderSystem(void) {
 	gameRender.casPostProcessMaterial = FindPostProcessMaterial( "postprocess/casupscale", "postprocess/openq4_casupscale" );
 	gameRender.blurPostProcessMaterial = FindPostProcessMaterial( "postprocess/blur", "postprocess/openq4_blur" );
 	gameRender.resolvePostProcessMaterial = FindPostProcessMaterial( "postprocess/resolvepostprocess", "postprocess/openq4_resolvepostprocess" );
+	gameRender.copyPostProcess1Material = FindPostProcessMaterial( "postprocess/copy_postprocess1", "postprocess/openq4_copy_postprocess1" );
 	gameRender.smaaEdgePostProcessMaterial = FindPostProcessMaterial( "postprocess/smaa_edge", "postprocess/openq4_smaa_edge" );
 	gameRender.smaaWeightsPostProcessMaterial = FindPostProcessMaterial( "postprocess/smaa_weights", "postprocess/openq4_smaa_weights" );
 	gameRender.smaaBlendPostProcessMaterial = FindPostProcessMaterial( "postprocess/smaa_blend", "postprocess/openq4_smaa_blend" );
@@ -298,7 +344,7 @@ void idGameLocal::ResizeRenderTextures(int width, int height) {
 	if ( gameRender.forwardRenderPassResolvedRT != NULL ) {
 		renderSystem->ResizeRenderTexture( gameRender.forwardRenderPassResolvedRT, width, height );
 	}
-	for ( int i = 0; i < 2; i++ ) {
+	for ( int i = 0; i < 3; i++ ) {
 		if ( gameRender.postProcessRT[i] != NULL ) {
 			renderSystem->ResizeRenderTexture( gameRender.postProcessRT[i], width, height );
 		}
@@ -419,7 +465,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 			return;
 		}
 
-		renderSystem->BindRenderTexture( gameRender.forwardRenderPassResolvedRT, nullptr );
+		OpenQ4_BindSceneRenderTexture( gameRender.forwardRenderPassResolvedRT );
 		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
 		OpenQ4_RenderSceneWorld( view, renderWorld, portalSky, renderFlags );
 		renderSystem->BindRenderTexture( nullptr, nullptr );
@@ -437,61 +483,8 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		return;
 	}
 
-	if ( useSMAA ) {
-		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
-		renderSystem->CaptureRenderToImage( "_currentRender" );
-
-		// Pass 1: edge detection into _postProcessAlbedo1.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaEdgePostProcessMaterial );
-
-		// Pass 2: blending weight calculation into _postProcessAlbedo0.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[0], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaWeightsPostProcessMaterial );
-
-		// Pass 3: neighborhood blending into _postProcessAlbedo1, then copy the
-		// final SMAA output back into _postProcessAlbedo0 for the rest of the post stack.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaBlendPostProcessMaterial );
-		renderSystem->CaptureRenderToImage( "_postProcessAlbedo0" );
-		renderSystem->BindRenderTexture( nullptr, nullptr );
-
-		const idMaterial* finalMaterial = gameRender.noPostProcessMaterial;
-		if ( blurEnabled ) {
-			finalMaterial = gameRender.blurPostProcessMaterial;
-		} else if ( g_renderCasUpscale.GetBool() && gameRender.casPostProcessMaterial != NULL ) {
-			finalMaterial = gameRender.casPostProcessMaterial;
-		}
-		if ( finalMaterial == NULL ) {
-			OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
-			renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
-			return;
-		}
-
-		renderSystem->ClearRenderTarget( false, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		OpenQ4_DrawFullScreenMaterial( finalMaterial );
-
-		if ( g_renderCaptureCurrentRender.GetBool() ) {
-			renderSystem->CaptureRenderToImage( "_currentRender" );
-		}
-		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
-		return;
-	}
-
 	// Render the scene to the forward render pass rendertexture.
-	renderSystem->BindRenderTexture(gameRender.forwardRenderPassRT, nullptr);
+	OpenQ4_BindSceneRenderTexture( gameRender.forwardRenderPassRT );
 	{
 		// Clear the color/depth buffers
 		renderSystem->ClearRenderTarget(true, true, 1.0f, 0.0f, 0.0f, 0.0f);
@@ -507,45 +500,16 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		blurEnabled || cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
 
 	// Resolve pass writes scene color to the post-process source buffer.
-	renderSystem->BindRenderTexture(gameRender.postProcessRT[0], nullptr);
+	idRenderTexture* resolvePostProcessRT = useSMAA ? gameRender.postProcessRT[2] : gameRender.postProcessRT[0];
+	renderSystem->BindRenderTexture(resolvePostProcessRT, nullptr);
 		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
 		OpenQ4_DrawFullScreenMaterial( gameRender.resolvePostProcessMaterial );
 	renderSystem->BindRenderTexture( nullptr, nullptr );
 	if ( useSMAA ) {
-		// Pass 1: edge detection into _postProcessAlbedo1.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaEdgePostProcessMaterial );
-
-		// Pass 2: blending weight calculation into _postProcessAlbedo0.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[0], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaWeightsPostProcessMaterial );
-
-		// Pass 3: neighborhood blending into _postProcessAlbedo1, then copy the
-		// final SMAA output back into _postProcessAlbedo0 for the rest of the post stack.
-		renderSystem->BindRenderTexture( gameRender.postProcessRT[1], nullptr );
-		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
-		renderSystem->DrawStretchPic(
-			0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT,
-			0.0f, 1.0f, 1.0f, 0.0f,
-			gameRender.smaaBlendPostProcessMaterial );
-		renderSystem->CaptureRenderToImage( "_postProcessAlbedo0" );
-		renderSystem->BindRenderTexture( nullptr, nullptr );
+		OpenQ4_ApplySMAA( gameRender );
 	}
 
-	const idMaterial* finalMaterial = gameRender.noPostProcessMaterial;
-	if ( blurEnabled ) {
-		finalMaterial = gameRender.blurPostProcessMaterial;
-	} else if ( g_renderCasUpscale.GetBool() && gameRender.casPostProcessMaterial != NULL ) {
-		finalMaterial = gameRender.casPostProcessMaterial;
-	}
+	const idMaterial* finalMaterial = OpenQ4_SelectFinalPostProcessMaterial( gameRender, blurEnabled );
 	if ( finalMaterial == NULL ) {
 		OpenQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );

@@ -472,12 +472,14 @@ void idGameLocal::Clear( void ) {
 	gameRender.forwardRenderPassRT = NULL;
 	gameRender.postProcessRT[0] = NULL;
 	gameRender.postProcessRT[1] = NULL;
+	gameRender.postProcessRT[2] = NULL;
 	gameRender.forwardRenderPassResolvedRT = NULL;
 	gameRender.noPostProcessMaterial = NULL;
 	gameRender.casPostProcessMaterial = NULL;
 	gameRender.blurPostProcessMaterial = NULL;
 	gameRender.blackPostProcessMaterial = NULL;
 	gameRender.resolvePostProcessMaterial = NULL;
+	gameRender.copyPostProcess1Material = NULL;
 	gameRender.smaaEdgePostProcessMaterial = NULL;
 	gameRender.smaaWeightsPostProcessMaterial = NULL;
 	gameRender.smaaBlendPostProcessMaterial = NULL;

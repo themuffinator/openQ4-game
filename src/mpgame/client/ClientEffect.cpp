@@ -41,7 +41,14 @@ void rvClientEffect::Init ( const idDecl *effect ) {
 	
 	renderEffect.declEffect	= effect;
 	renderEffect.startTime	= -1.0f;
+	renderEffect.inConnectedArea = true;
 	renderEffect.referenceSoundHandle = -1;
+	renderEffect.shaderParms[SHADERPARM_RED] = 1.0f;
+	renderEffect.shaderParms[SHADERPARM_GREEN] = 1.0f;
+	renderEffect.shaderParms[SHADERPARM_BLUE] = 1.0f;
+	renderEffect.shaderParms[SHADERPARM_ALPHA] = 1.0f;
+	renderEffect.shaderParms[SHADERPARM_BRIGHTNESS] = 1.0f;
+	renderEffect.shaderParms[SHADERPARM_TIMEOFFSET] = MS2SEC( gameLocal.time );
 	effectDefHandle = -1;
 	endOriginJoint	= INVALID_JOINT;
 }

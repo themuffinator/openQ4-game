@@ -58,6 +58,11 @@ void rvEffect::Spawn( void ) {
 	// If look at target is set the effect will continually update itself to look at its target
 	spawnArgs.GetBool( "lookAtTarget", "0", lookAtTarget );
 
+	idVec3 color;
+	spawnArgs.GetVector( "_color", "1 1 1", color );
+	renderEntity.shaderParms[SHADERPARM_RED] = color[0];
+	renderEntity.shaderParms[SHADERPARM_GREEN] = color[1];
+	renderEntity.shaderParms[SHADERPARM_BLUE] = color[2];
 	renderEntity.shaderParms[SHADERPARM_ALPHA] = spawnArgs.GetFloat ( "_alpha", "1" );
 	renderEntity.shaderParms[SHADERPARM_BRIGHTNESS] = spawnArgs.GetFloat ( "_brightness", "1" );
 
