@@ -10440,7 +10440,9 @@ void idPlayer::ResetWeaponWheel( bool instantRestore ) {
 	if ( instantRestore ) {
 		weaponWheelBlend = 0.0f;
 		gameLocal.SetSpecialEffect( SPECIAL_EFFECT_BLUR, false );
-		cvarSystem->SetCVarFloat( "timescale", weaponWheelBaseTimescale );
+		if ( !gameLocal.isMultiplayer ) {
+			cvarSystem->SetCVarFloat( "timescale", weaponWheelBaseTimescale );
+		}
 	}
 }
 
@@ -10580,7 +10582,6 @@ void idPlayer::UpdateWeaponWheelCursor( void ) {
 void idPlayer::UpdateWeaponWheelEffects( void ) {
 	const float blend = idMath::ClampFloat( 0.0f, 1.0f, weaponWheelBlend );
 	if ( gameLocal.isMultiplayer ) {
-		cvarSystem->SetCVarFloat( "timescale", weaponWheelBaseTimescale );
 		gameLocal.SetSpecialEffect( SPECIAL_EFFECT_BLUR, false );
 		return;
 	}
