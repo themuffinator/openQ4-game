@@ -7,8 +7,8 @@
 
 // simple types.  function types are dynamically allocated
 idTypeDef	type_void( ev_void, &def_void, "void", 0, NULL );
-idTypeDef	type_scriptevent( ev_scriptevent, &def_scriptevent, "scriptevent", sizeof( void * ), NULL );
-idTypeDef	type_namespace( ev_namespace, &def_namespace, "namespace", sizeof( void * ), NULL );
+idTypeDef	type_scriptevent( ev_scriptevent, &def_scriptevent, "scriptevent", sizeof( intptr_t ), NULL );
+idTypeDef	type_namespace( ev_namespace, &def_namespace, "namespace", sizeof( intptr_t ), NULL );
 // RAVEN BEGIN
 // abahr
 rvTypeDefString	type_string( ev_string, &def_string, "string", MAX_STRING_LEN, NULL );
@@ -17,9 +17,9 @@ rvTypeDefVec3	type_vector( ev_vector, &def_vector, "vector", sizeof( idVec3 ), N
 rvTypeDefEntity	type_entity( ev_entity, &def_entity, "entity", sizeof( int ), NULL );						// stored as entity number
 // RAVEN END
 idTypeDef	type_field( ev_field, &def_field, "field", sizeof( int ), NULL );
-idTypeDef	type_function( ev_function, &def_function, "function", sizeof( void * ), &type_void );
+idTypeDef	type_function( ev_function, &def_function, "function", sizeof( intptr_t ), &type_void );
 idTypeDef	type_virtualfunction( ev_virtualfunction, &def_virtualfunction, "virtual function", sizeof( int ), NULL );
-idTypeDef	type_pointer( ev_pointer, &def_pointer, "pointer", sizeof( void * ), NULL );
+idTypeDef	type_pointer( ev_pointer, &def_pointer, "pointer", sizeof( intptr_t ), NULL );
 idTypeDef	type_object( ev_object, &def_object, "object", sizeof( int ), NULL );						// stored as entity number
 idTypeDef	type_jumpoffset( ev_jumpoffset, &def_jumpoffset, "<jump>", sizeof( int ), NULL );		// only used for jump opcodes
 idTypeDef	type_argsize( ev_argsize, &def_argsize, "<argsize>", sizeof( int ), NULL );				// only used for function call and thread opcodes

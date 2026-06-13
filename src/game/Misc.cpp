@@ -2304,39 +2304,18 @@ static bool IsMccLandingBorkedLift( const idStaticEntity *ent ) {
 	return true;
 }
 
-static void MccLandingResolveBorkedLiftPlayerClip( idStaticEntity *ent ) {
+static void MccLandingSyncBorkedLiftToElevator( idStaticEntity *ent ) {
 	if ( !IsMccLandingBorkedLift( ent ) ) {
 		return;
 	}
 
-	idPlayer *player = gameLocal.GetLocalPlayer();
-	if ( !player ) {
+	idEntity *elevator = gameLocal.FindEntity( "afterGunElevator" );
+	if ( !elevator ) {
 		return;
 	}
 
-	idPhysics *playerPhysics = player->GetPhysics();
-	idEntity *touchedEntity = NULL;
-	if ( gameLocal.Contents( player, playerPhysics->GetOrigin(), playerPhysics->GetClipModel(), playerPhysics->GetAxis(), playerPhysics->GetClipMask(), player, &touchedEntity ) == 0 || touchedEntity != ent ) {
-		return;
-	}
-
-	const idVec3 start = playerPhysics->GetOrigin();
-	const idVec3 up = -playerPhysics->GetGravityNormal();
-
-	for ( float lift = 1.0f; lift <= 48.0f; lift += 1.0f ) {
-		const idVec3 candidate = start + up * lift;
-
-		touchedEntity = NULL;
-		if ( gameLocal.Contents( player, candidate, playerPhysics->GetClipModel(), playerPhysics->GetAxis(), playerPhysics->GetClipMask(), player, &touchedEntity ) != 0 ) {
-			continue;
-		}
-
-		idVec3 velocity = playerPhysics->GetLinearVelocity();
-		velocity -= up * ( velocity * up );
-		player->SetOrigin( candidate );
-		playerPhysics->SetLinearVelocity( velocity );
-		return;
-	}
+	ent->SetOrigin( elevator->GetPhysics()->GetOrigin() );
+	ent->SetAxis( elevator->GetPhysics()->GetAxis() );
 }
 
 /*
@@ -2470,10 +2449,10 @@ idStaticEntity::Show
 ================
 */
 void idStaticEntity::Show( void ) {
+	MccLandingSyncBorkedLiftToElevator( this );
 	idEntity::Show();
 	if ( spawnArgs.GetBool( "solid" ) ) {
 		GetPhysics()->SetContents( CONTENTS_SOLID );
-		MccLandingResolveBorkedLiftPlayerClip( this );
 	}
 }
 

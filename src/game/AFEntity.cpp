@@ -415,12 +415,16 @@ void idAFAttachment::CopyJointsFromBody ( void ) {
 	for( i = 0; i < copyJoints.Num(); i++ ) {
 		if ( copyJoints[ i ].mod == JOINTMOD_WORLD_OVERRIDE ) {
 			mat = GetPhysics()->GetAxis().Transpose();
-			body->GetJointWorldTransform( copyJoints[ i ].from, gameLocal.time, pos, axis );
+			if ( !body->GetJointWorldTransform( copyJoints[ i ].from, gameLocal.time, pos, axis ) ) {
+				continue;
+			}
 			pos -= GetPhysics()->GetOrigin();
 			animator.SetJointPos( copyJoints[ i ].to, copyJoints[ i ].mod, pos * mat );
 			animator.SetJointAxis( copyJoints[ i ].to, copyJoints[ i ].mod, axis * mat );
 		} else {
-			bodyAnimator->GetJointLocalTransform( copyJoints[ i ].from, gameLocal.time, pos, axis );
+			if ( !bodyAnimator->GetJointLocalTransform( copyJoints[ i ].from, gameLocal.time, pos, axis ) ) {
+				continue;
+			}
 			animator.SetJointPos( copyJoints[ i ].to, copyJoints[ i ].mod, pos );
 			animator.SetJointAxis( copyJoints[ i ].to, copyJoints[ i ].mod, axis );
 		}

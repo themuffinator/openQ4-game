@@ -766,11 +766,14 @@ void idGameLocal::Init( void ) {
 	dict = FindEntityDefDict( "aas_types", false );
 // RAVEN END
 	if ( !dict ) {
-		Error( "Unable to find entityDef for 'aas_types'" );
+		if ( !g_allowAssetlessStartup.GetBool() ) {
+			Error( "Unable to find entityDef for 'aas_types'" );
+		}
+		Printf( "aas_types decl not found; continuing without AAS because g_allowAssetlessStartup is enabled.\n" );
 	}
 
 	// allocate space for the aas
-	const idKeyValue *kv = dict->MatchPrefix( "type" );
+	const idKeyValue *kv = dict ? dict->MatchPrefix( "type" ) : NULL;
 	while( kv != NULL ) {
 // RAVEN BEGIN
 // jnewquist: Tag scope and callees to track allocations using "new".

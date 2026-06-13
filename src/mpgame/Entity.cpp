@@ -2305,6 +2305,16 @@ idEntity::FinishBind
 */
 void idEntity::FinishBind( void ) {
 
+	// Prime the master's visual pose before physics stores bind-local offsets.
+	bindMaster->UpdateModelTransform();
+	if ( bindJoint != INVALID_JOINT ) {
+		idAnimator *masterAnimator = bindMaster->GetAnimator();
+		if ( masterAnimator ) {
+			masterAnimator->ForceUpdate();
+			masterAnimator->CreateFrame( gameLocal.time, true );
+		}
+	}
+
 	// set the master on the physics object
 	physics->SetMaster( bindMaster, fl.bindOrientated );
 
@@ -2794,6 +2804,8 @@ bool idEntity::GetMasterPosition( idVec3 &masterOrigin, idMat3 &masterAxis ) con
 	idAnimator	*masterAnimator;
 
 	if ( bindMaster ) {
+		bindMaster->UpdateModelTransform();
+
 		// if bound to a joint of an animated model
 		if ( bindJoint != INVALID_JOINT ) {
 			masterAnimator = bindMaster->GetAnimator();
@@ -2802,9 +2814,13 @@ bool idEntity::GetMasterPosition( idVec3 &masterOrigin, idMat3 &masterAxis ) con
 				masterAxis = mat3_identity;
 				return false;
 			} else {
-				masterAnimator->GetJointTransform( bindJoint, gameLocal.time, masterOrigin, masterAxis );
-				masterAxis *= bindMaster->renderEntity.axis;
-				masterOrigin = bindMaster->renderEntity.origin + masterOrigin * bindMaster->renderEntity.axis;
+				if ( !masterAnimator->GetJointTransform( bindJoint, gameLocal.time, masterOrigin, masterAxis ) ) {
+					masterOrigin = bindMaster->renderEntity.origin;
+					masterAxis = bindMaster->renderEntity.axis;
+				} else {
+					masterAxis *= bindMaster->renderEntity.axis;
+					masterOrigin = bindMaster->renderEntity.origin + masterOrigin * bindMaster->renderEntity.axis;
+				}
 			}
 		} else if ( bindBody >= 0 && bindMaster->GetPhysics() ) {
 			masterOrigin = bindMaster->GetPhysics()->GetOrigin( bindBody );

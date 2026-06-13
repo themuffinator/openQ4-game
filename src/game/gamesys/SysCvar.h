@@ -7,6 +7,7 @@ extern idCVar	developer;
 extern idCVar	g_cinematic;
 extern idCVar	g_cinematicMaxSkipTime;
 extern idCVar	g_autoSkipCinematics;
+extern idCVar	g_allowAssetlessStartup;
 extern idCVar	g_corpseRemoveDelaySP;
 extern idCVar	g_corpseSink;
 

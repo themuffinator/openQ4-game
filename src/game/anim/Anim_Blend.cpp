@@ -1476,6 +1476,13 @@ void idAnimBlend::SetFrame( const idDeclModelDef *modelDef, int _animNum, const 
 
 	frameBlend = _frameBlend;
 	animNum = _animNum;
+	animWeights[ 0 ] = 1.0f;
+	blendStartValue = 1.0f;
+	blendEndValue = 1.0f;
+	blendStartTime = 0;
+	blendDuration = 0;
+	endtime = -1;
+	cycle = -1;
 	useFrameBlend = true;
 
 	// a frame of 0 means it's not a single frame blend, so we set it to frame + 1
@@ -3934,6 +3941,7 @@ void idAnimator::SetFrame( int channelNum, int animNum, const frameBlend_t & fra
 	if ( entity ) {
 		entity->BecomeActive( TH_ANIMATE );
 	}
+	ForceUpdate();
 }
 
 /*

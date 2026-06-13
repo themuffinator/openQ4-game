@@ -14787,6 +14787,9 @@ void idPlayer::SetupHead( const char* headModel, idVec3 headOffset ) {
 		headEnt->SetBody ( this, headDict->GetString ( "model" ), joint );
 		headEnt->SetOrigin( vec3_origin + headOffset );
 		headEnt->SetAxis( mat3_identity );
+		UpdateModelTransform();
+		animator.ForceUpdate();
+		animator.CreateFrame( gameLocal.time, true );
 		headEnt->Bind( this, joint, true );
 		headEnt->InitCopyJoints();
 
