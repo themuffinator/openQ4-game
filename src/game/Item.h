@@ -31,7 +31,7 @@ public:
 
 	void					Spawn( void );
 	void					GetAttributes( idDict &attributes );
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, bool updateHud = true );
 	virtual bool			Pickup( idPlayer *player );
 	virtual void			Think( void );
 	virtual void			Present();
@@ -153,7 +153,7 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	void					Spawn();
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, bool updateHud = true );
 	virtual void			Think( void );
 	virtual bool			Pickup( idPlayer *player );
 
@@ -214,7 +214,7 @@ public:
 							rvItemCTFFlag();
 							
 	void					Spawn();
-	virtual bool			GiveToPlayer ( idPlayer* player );
+	virtual bool			GiveToPlayer ( idPlayer* player, bool updateHud = true );
 	virtual bool			Pickup( idPlayer *player );
 	
 	static void				ResetFlag( int type );

@@ -1897,6 +1897,16 @@ void rvWeapon::SetStatus ( weaponStatus_t _status ) {
 
 /*
 ================
+rvWeapon::SetReadyState
+================
+*/
+void rvWeapon::SetReadyState( void ) {
+	RaiseWeapon();
+	ExecuteState( "Idle" );
+}
+
+/*
+================
 rvWeapon::OwnerDied
 ================
 */

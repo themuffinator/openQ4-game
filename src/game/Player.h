@@ -524,15 +524,19 @@ public:
 // RAVEN END
 	bool					OffsetThirdPersonTargetView		( void );
 
-	bool					Give( const char *statname, const char *value, bool dropped = false );
-	bool					GiveItem( idItem *item );
+	bool					Give( const char *statname, const char *value, bool dropped = false, bool updateHud = true );
+	bool					GiveItem( idItem *item, bool updateHud = true );
 	void					GiveItem( const char *name );
 	
 	// Inventory
-	bool					GiveInventoryItem( idDict *item );
+	bool					GiveInventoryItem( idDict *item, bool updateHud = true );
 	void					RemoveInventoryItem( idDict *item );
 	bool					GiveInventoryItem( const char *name );
 	void					RemoveInventoryItem( const char *name );
+	void					BeginStartupLoadout( void );
+	void					EndStartupLoadout( void );
+	bool					IsApplyingStartupLoadout( void ) const;
+	void					SetCurrentWeaponReady( void );
 	idDict *				FindInventoryItem( const char *name );
 
 	// Wrist computer
@@ -966,6 +970,7 @@ private:
  	bool					respawning;				// set to true while in SpawnToPoint for telefrag checks
  	bool					leader;					// for sudden death situations
  	bool					weaponCatchup;			// raise up the weapon silently ( state catchups )
+	int						startupLoadoutDepth;
 	bool					isTelefragged;			// proper obituaries
 	
 	int						lastSpectateChange;

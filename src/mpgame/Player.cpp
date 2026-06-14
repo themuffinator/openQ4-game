@@ -1317,6 +1317,7 @@ idPlayer::idPlayer() {
  	lastTeleFX				= -9999;
 
  	weaponCatchup			= false;
+	startupLoadoutDepth		= 0;
  	lastSnapshotSequence	= 0;
  
  	aimClientNum			= -1;
@@ -1476,6 +1477,62 @@ void idPlayer::SetWeapon( int weaponIndex ) {
 		Event_DisableWeapon();
 	}
 }
+
+/*
+==============
+idPlayer::BeginStartupLoadout
+==============
+*/
+void idPlayer::BeginStartupLoadout( void ) {
+	startupLoadoutDepth++;
+}
+
+/*
+==============
+idPlayer::EndStartupLoadout
+==============
+*/
+void idPlayer::EndStartupLoadout( void ) {
+	if ( startupLoadoutDepth > 0 ) {
+		startupLoadoutDepth--;
+	} else {
+		startupLoadoutDepth = 0;
+	}
+}
+
+/*
+==============
+idPlayer::IsApplyingStartupLoadout
+==============
+*/
+bool idPlayer::IsApplyingStartupLoadout( void ) const {
+	return startupLoadoutDepth > 0;
+}
+
+/*
+==============
+idPlayer::SetCurrentWeaponReady
+==============
+*/
+void idPlayer::SetCurrentWeaponReady( void ) {
+	if ( spectating || hiddenWeapon || health <= 0 || idealWeapon < 0 ) {
+		return;
+	}
+
+	if ( !weapon || idealWeapon != currentWeapon ) {
+		SetWeapon( idealWeapon );
+	}
+
+	if ( !weapon ) {
+		return;
+	}
+
+	weaponGone = false;
+	weaponCatchup = false;
+	weapon->SetReadyState();
+	SetAnimState( ANIMCHANNEL_TORSO, "Torso_Idle", 0 );
+	UpdateHudWeapon();
+}
  
 /*
 ==============
@@ -1574,6 +1631,7 @@ void idPlayer::Init( void ) {
 	previousWeapon			= -1;
 	weaponSwitchTime		= 0;
 	weaponEnabled			= true;
+	startupLoadoutDepth		= 0;
  	showWeaponViewModel		= userInfo ? userInfo->GetBool( "ui_showGun" ) : cvarSystem->GetCVarBool( "ui_showGun" );
 	oldInventoryWeapons		= 0;
 
@@ -1890,6 +1948,7 @@ Prepare any resources used by the player.
 void idPlayer::Spawn( void ) {
 	idStr		temp;
 	idBounds	bounds;
+	bool		startupLoadoutApplied = false;
 
 	if ( entityNumber >= MAX_CLIENTS && !IsFakeClient() ) {
 		gameLocal.Error( "entityNum > MAX_CLIENTS for player.  Player may only be spawned with a client." );
@@ -2046,7 +2105,10 @@ void idPlayer::Spawn( void ) {
 		// fire a trigger with the name "devmap"
 		idEntity *ent = gameLocal.FindEntity( "devmap" );
 		if ( ent ) {
+			BeginStartupLoadout();
 			ent->ActivateTargets( this );
+			EndStartupLoadout();
+			startupLoadoutApplied = true;
 		}
 	}
 	
@@ -2059,6 +2121,10 @@ void idPlayer::Spawn( void ) {
 		Event_DisableWeapon();
 	} else {
 		hiddenWeapon = false;
+	}
+
+	if ( startupLoadoutApplied ) {
+		SetCurrentWeaponReady();
 	}
 	
 	if ( hud ) {
@@ -4311,7 +4377,7 @@ void idPlayer::CacheWeapons( void ) {
 idPlayer::Give
 ===============
 */
-bool idPlayer::Give( const char *statname, const char *value, bool dropped ) {
+bool idPlayer::Give( const char *statname, const char *value, bool dropped, bool updateHud ) {
 	int amount;
 
 	if ( pfl.dead ) {
@@ -4406,7 +4472,7 @@ bool idPlayer::Give( const char *statname, const char *value, bool dropped ) {
 			}
 		}
 	} else {
- 		return inventory.Give( this, spawnArgs, statname, value, &idealWeapon, true, dropped );
+		return inventory.Give( this, spawnArgs, statname, value, &idealWeapon, updateHud, dropped );
 	}
 	return true;
 }
@@ -4418,7 +4484,7 @@ idPlayer::GiveItem
 Returns false if the item shouldn't be picked up
 ===============
 */
-bool idPlayer::GiveItem( idItem *item ) {
+bool idPlayer::GiveItem( idItem *item, bool updateHud ) {
 	int					i;
 	const idKeyValue	*arg;
 	idDict				attr;
@@ -4449,7 +4515,7 @@ bool idPlayer::GiveItem( idItem *item ) {
 				arg = attr.FindKey( "weapon" );
 				if ( arg ) {
 					skipWeaponKey = true;
-					if ( Give( arg->GetKey(), arg->GetValue(), dropped ) ) {
+					if ( Give( arg->GetKey(), arg->GetValue(), dropped, updateHud ) ) {
 						gave = true;
 					} else if ( !dropped//not a dropped weapon
 						&& gameLocal.IsWeaponsStayOn() ) {
@@ -4466,7 +4532,7 @@ bool idPlayer::GiveItem( idItem *item ) {
 					//already processed this above
 					continue;
 				}
-				if ( Give( arg->GetKey(), arg->GetValue(), dropped ) ) {
+				if ( Give( arg->GetKey(), arg->GetValue(), dropped, updateHud ) ) {
 					gave = true;
 				}
 			}
@@ -4485,15 +4551,15 @@ bool idPlayer::GiveItem( idItem *item ) {
 	}
 
 	arg = item->spawnArgs.MatchPrefix( "inv_ammo_", NULL );
-	if ( arg && hud ) {
+	if ( updateHud && arg && hud ) {
 		hud->HandleNamedEvent( "ammoPulse" );
 	}
 	arg = item->spawnArgs.MatchPrefix( "inv_health", NULL );
-	if ( arg && hud ) {
+	if ( updateHud && arg && hud ) {
 		hud->HandleNamedEvent( "healthPulse" );
 	}
 	arg = item->spawnArgs.MatchPrefix( "inv_weapon", NULL );
-	if ( arg && hud ) {
+	if ( updateHud && arg && hud ) {
 		// We need to update the weapon hud manually, but not
 		// the armor/ammo/health because they are updated every
 		// frame no matter what
@@ -4507,21 +4573,21 @@ bool idPlayer::GiveItem( idItem *item ) {
 		hud->HandleNamedEvent( "weaponPulse" );
 	}
 	arg = item->spawnArgs.MatchPrefix( "inv_armor", NULL );
-	if ( arg && hud ) {
+	if ( updateHud && arg && hud ) {
 		hud->HandleNamedEvent( "armorPulse" );
 	}
 	
 //	GiveDatabaseEntry ( &item->spawnArgs );
 	
 	// Show the item pickup on the hud
-	if ( hud ) {
+	if ( updateHud && hud ) {
 		idStr langToken = item->spawnArgs.GetString( "inv_name" );
 		hud->SetStateString ( "itemtext", common->GetLocalizedString( langToken ) );
 		hud->SetStateString ( "itemicon", item->spawnArgs.GetString( "inv_icon" ) );
 		hud->HandleNamedEvent ( "itemPickup" );
 	}
 //RITUAL BEGIN
-	if ( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+	if ( updateHud && gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
 		gameLocal.mpGame.RedrawLocalBuyMenu();
 //RITUAL END
 
@@ -5373,7 +5439,7 @@ void idPlayer::GiveWeaponMod ( const char* weaponmod ) {
 idPlayer::GiveInventoryItem
 ===============
 */
-bool idPlayer::GiveInventoryItem( idDict *item ) {
+bool idPlayer::GiveInventoryItem( idDict *item, bool updateHud ) {
 	if ( gameLocal.isMultiplayer && spectating ) {
 		return false;
 	}
@@ -5388,7 +5454,7 @@ bool idPlayer::GiveInventoryItem( idDict *item ) {
 	RV_POP_HEAP();
 // RAVEN END
 
-	if ( hud ) {
+	if ( updateHud && hud ) {
 		const char *itemName = common->GetLocalizedString( item->GetString( "inv_name" ) );
 		hud->SetStateString ( "itemtext", itemName );
 		hud->SetStateString ( "itemicon", item->GetString( "inv_icon" ) );

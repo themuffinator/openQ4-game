@@ -637,6 +637,7 @@ void idTarget_Give::Event_Activate( idEntity *activator ) {
 	static int giveNum = 0;
 	idPlayer *player = gameLocal.GetLocalPlayer();
 	if ( player ) {
+		const bool quietStartupGive = spawnArgs.GetBool( "onSpawn" ) || player->IsApplyingStartupLoadout();
 		const idKeyValue *kv = spawnArgs.MatchPrefix( "item", NULL );
 		while ( kv ) {
 			const idDict *dict = gameLocal.FindEntityDefDict( kv->GetValue(), false );
@@ -650,12 +651,12 @@ void idTarget_Give::Event_Activate( idEntity *activator ) {
 				if ( gameLocal.SpawnEntityDef( d2, &ent ) && ent && ent->IsType( idItem::GetClassType() ) ) {
 // RAVEN END
 					idItem *item = static_cast<idItem*>(ent);
-					item->GiveToPlayer( gameLocal.GetLocalPlayer() );
+					item->GiveToPlayer( player, !quietStartupGive );
 					item->PostEventMS ( &EV_Remove, 0 );
 
 					// rules are that if we are given a weapon by a character, we are supposed to switch to it regardless of
 					//	whether auto-switch is on or not.
-					if ( !gameLocal.isMultiplayer && !player->GetUserInfo()->GetBool( "ui_autoSwitch" ) && !spawnArgs.GetBool( "onSpawn" )) {
+					if ( !quietStartupGive && !gameLocal.isMultiplayer && !player->GetUserInfo()->GetBool( "ui_autoSwitch" ) && !spawnArgs.GetBool( "onSpawn" )) {
 						const idKeyValue *kv = ent->spawnArgs.FindKey( "weaponclass" );
 						if ( kv ) {
 							// does player already have this weapon selected?
@@ -671,6 +672,9 @@ void idTarget_Give::Event_Activate( idEntity *activator ) {
 				}
 			}
 			kv = spawnArgs.MatchPrefix( "item", kv );
+		}
+		if ( quietStartupGive && !player->IsApplyingStartupLoadout() ) {
+			player->SetCurrentWeaponReady();
 		}
 	}
 }

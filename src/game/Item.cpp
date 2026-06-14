@@ -587,13 +587,13 @@ void idItem::GetAttributes( idDict &attributes ) {
 idItem::GiveToPlayer
 ================
 */
-bool idItem::GiveToPlayer( idPlayer *player ) {
+bool idItem::GiveToPlayer( idPlayer *player, bool updateHud ) {
 	if ( player == NULL ) {
 		return false;
 	}
 
 	if ( spawnArgs.GetBool( "inv_carry" ) ) {
-		return player->GiveInventoryItem( &spawnArgs );
+		return player->GiveInventoryItem( &spawnArgs, updateHud );
 	} 
 	
 	// Handle the special ammo pickup that gives ammo for the weapon the player currently has
@@ -607,7 +607,7 @@ bool idItem::GiveToPlayer( idPlayer *player ) {
 		return false;
 	} 
 
-	return player->GiveItem( this );
+	return player->GiveItem( this, updateHud );
 }
 
 /*
@@ -1145,7 +1145,7 @@ void idItemPowerup::Spawn( void ) {
 idItemPowerup::GiveToPlayer
 ================
 */
-bool idItemPowerup::GiveToPlayer( idPlayer *player ) {
+bool idItemPowerup::GiveToPlayer( idPlayer *player, bool updateHud ) {
 	if ( player == NULL || player->spectating ) {
 		return false;
 	}
@@ -1172,7 +1172,7 @@ bool idItemPowerup::GiveToPlayer( idPlayer *player ) {
 	}
 
 	// also call idItem::GiveToPlayer so any inv_* keywords get applied
-	idItem::GiveToPlayer( player );
+	idItem::GiveToPlayer( player, updateHud );
 
 	return true;
 }
@@ -2009,7 +2009,8 @@ void rvItemCTFFlag::Event_LinkTrigger( void ) {
 rvItemCTFFlag::GiveToPlayer
 ================
 */
-bool rvItemCTFFlag::GiveToPlayer( idPlayer* player ) {
+bool rvItemCTFFlag::GiveToPlayer( idPlayer* player, bool updateHud ) {
+	(void)updateHud;
 	if ( !gameLocal.IsMultiplayer() ) {
 		return false;
 	}

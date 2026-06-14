@@ -184,6 +184,7 @@ public:
 	bool				CanZoom						( void ) const;
 	void				CancelReload				( void );
 	void				SetStatus					( weaponStatus_t status );
+	void				SetReadyState				( void );
 	bool				AutoReload					( void );
 	bool				IsHidden					( void ) const;
 	void				EjectBrass					( void );
