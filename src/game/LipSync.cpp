@@ -66,7 +66,11 @@ bool FAS_LoadPhonemes( const char *visemes )
 	visemeFile += ".viseme";
 
 	lexer.SetFlags( DECL_LEXER_FLAGS );
-	lexer.LoadFile( visemeFile );
+	if( !lexer.LoadFile( visemeFile ) )
+	{
+		common->Warning( "Could not load viseme file '%s'", visemeFile.c_str() );
+		return( false );
+	}
 
 	if( !lexer.ExpectTokenString( "visemes" ) )
 	{

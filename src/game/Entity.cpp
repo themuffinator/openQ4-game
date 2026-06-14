@@ -3807,6 +3807,48 @@ static const rvDeclMatType *GetResolvedCollisionMaterialType( const trace_t &col
 	return NULL;
 }
 
+static const char *GetDamageEffectMaterialTypeName( const idEntity *ent, const trace_t &collision ) {
+	const rvDeclMatType *resolvedMaterialType = GetResolvedCollisionMaterialType( collision );
+	if ( resolvedMaterialType != NULL ) {
+		return resolvedMaterialType->GetName();
+	}
+
+	if ( ent != NULL && ent->IsType( idAnimatedEntity::GetClassType() ) ) {
+		const int surfaceType = static_cast< const idAnimatedEntity * >( ent )->GetDefaultSurfaceType();
+		if ( surfaceType >= 0 && surfaceType < MAX_SURFACE_TYPES ) {
+			return gameLocal.sufaceTypeNames[ surfaceType ];
+		}
+	}
+
+	if ( collision.c.material != NULL ) {
+		const int surfaceType = collision.c.material->GetSurfaceType();
+		if ( surfaceType >= 0 && surfaceType < MAX_SURFACE_TYPES ) {
+			return gameLocal.sufaceTypeNames[ surfaceType ];
+		}
+	}
+
+	return gameLocal.sufaceTypeNames[ SURFTYPE_NONE ];
+}
+
+static void WriteDamageEffectMaterialType( idBitMsg &msg, const rvDeclMatType *materialType ) {
+	msg.WriteLong( materialType != NULL ? materialType->Index() : -1 );
+}
+
+static const rvDeclMatType *ReadDamageEffectMaterialType( const idBitMsg &msg ) {
+	const int materialTypeIndex = msg.ReadLong();
+	if ( materialTypeIndex < 0 ) {
+		return NULL;
+	}
+
+	const rvDeclMatType *materialType = declManager->MaterialTypeByIndex( materialTypeIndex, true );
+	if ( materialType == NULL || materialType->IsImplicit() ) {
+		gameLocal.Warning( "ReadDamageEffectMaterialType: invalid materialType index %d", materialTypeIndex );
+		return NULL;
+	}
+
+	return materialType;
+}
+
 void idEntity::AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName, idEntity* inflictor ) {
 	const char *sound, *decal, *key;
 
@@ -3818,10 +3860,7 @@ void idEntity::AddDamageEffect( const trace_t &collision, const idVec3 &velocity
 		return;
 	}
 
-	const rvDeclMatType *resolvedMaterialType = GetResolvedCollisionMaterialType( collision );
-	const char *materialType = resolvedMaterialType != NULL
-		? resolvedMaterialType->GetName()
-		: gameLocal.sufaceTypeNames[ collision.c.material->GetSurfaceType() ];
+	const char *materialType = GetDamageEffectMaterialTypeName( this, collision );
 
 	// start impact sound based on material type
 	key = va( "snd_%s", materialType );
@@ -6659,6 +6698,7 @@ void idAnimatedEntity::AddDamageEffect( const trace_t &collision, const idVec3 &
 		msg.WriteDir( dir, 24 );
 		idGameLocal::WriteDecl( msg, def );
 		idGameLocal::WriteDecl( msg, collision.c.material );
+		WriteDamageEffectMaterialType( msg, GetResolvedCollisionMaterialType( collision ) );
 		ServerSendInstanceEvent( EVENT_ADD_DAMAGE_EFFECT, &msg, false, -1 );
 	}
 
@@ -6738,11 +6778,13 @@ bool idAnimatedEntity::ClientReceiveEvent( int event, int time, const idBitMsg &
 			dir = msg.ReadDir( 24 );
 			const idDeclEntityDef *damageDef = static_cast< const idDeclEntityDef* >( idGameLocal::ReadDecl( msg, DECL_ENTITYDEF ) );
 			const idMaterial *collisionMaterial = static_cast< const idMaterial* >( idGameLocal::ReadDecl( msg, DECL_MATERIAL ) );
+			const rvDeclMatType *collisionMaterialType = ReadDamageEffectMaterialType( msg );
 // RAVEN BEGIN
 // ddynerman: removed redundant AddLocalDamageEffect()
 			trace_t collision;
 			collision.c.point = origin;
 			collision.c.material = collisionMaterial;
+			collision.c.materialType = collisionMaterialType;
 			AddDamageEffect( collision, dir, damageDef->GetName(), NULL );
 // RAVEN END
 			return true;
