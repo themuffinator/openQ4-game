@@ -574,6 +574,7 @@ void idGameLocal::Clear( void ) {
 	time = 0;
 	autoExecAfterMapLoadStartTime = 0;
 	autoExecAfterMapLoadPending = false;
+	autoExecAfterMapLoadWaitingLogged = false;
 	autoScreenshotStartTime = 0;
 	autoScreenshotPending = false;
 	autoMachinegunImpactStartTime = 0;
@@ -2380,8 +2381,11 @@ void idGameLocal::InitFromNewMap( const char *mapName, idRenderWorld *renderWorl
 		( autoExecAfterMapLoad && autoExecAfterMapLoad[ 0 ] != '\0' ) ||
 		( autoExecAfterMapLoadCvar && autoExecAfterMapLoadCvar[ 0 ] != '\0' );
 	autoExecAfterMapLoadPending = false;
+	autoExecAfterMapLoadWaitingLogged = false;
 	if ( autoExecAfterMapLoadArmed ) {
 		Printf( "AutoExecAfterMapLoad: armed for first active draw (delay %d ms)\n", g_autoExecAfterMapLoadDelayMs.GetInteger() );
+		Printf( "AutoExecAfterMapLoad: waiting for first active draw\n" );
+		autoExecAfterMapLoadWaitingLogged = true;
 	}
 
 	autoScreenshotStartTime = autoExecAfterMapLoadStartTime;
@@ -4623,6 +4627,10 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 			mpInteractionsGenerated = true;
 		}
 
+		if ( isMultiplayer ) {
+			CheckAutoExecAfterMapLoad();
+		}
+
 		// free the player pvs
 		FreePlayerPVS();
 
@@ -4800,7 +4808,11 @@ bool idGameLocal::Draw( int clientNum ) {
 //	ClearClipProfile( );
 
 	if ( isMultiplayer ) {
-		return mpGame.Draw( clientNum );
+		const bool drawn = mpGame.Draw( clientNum );
+		if ( drawn ) {
+			CheckAutoExecAfterMapLoad();
+		}
+		return drawn;
 	}
 
 	idPlayer *player = static_cast<idPlayer *>(entities[ clientNum ]);
@@ -4840,6 +4852,10 @@ Execute a one-shot cfg after the first active map frames, for deterministic vali
 ================
 */
 void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
+	if ( gamestate != GAMESTATE_ACTIVE ) {
+		return;
+	}
+
 	const char *execPath = g_autoExecAfterMapLoad.GetString();
 	if ( !execPath || execPath[ 0 ] == '\0' ) {
 		execPath = cvarSystem->GetCVarString( "g_autoExecAfterMapLoad" );
@@ -4850,9 +4866,17 @@ void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
 		if ( !autoExecAfterMapLoadPending ) {
 			autoExecAfterMapLoadPending = true;
 			autoExecAfterMapLoadStartTime = Sys_Milliseconds();
+			if ( !autoExecAfterMapLoadWaitingLogged ) {
+				common->Printf( "AutoExecAfterMapLoad: waiting for first active draw\n" );
+				autoExecAfterMapLoadWaitingLogged = true;
+			}
+			common->Printf( "AutoExecAfterMapLoad: first active draw observed; waiting %d ms before exec\n",
+				Max( 0, g_autoExecAfterMapLoadDelayMs.GetInteger() ) );
 		}
-	} else if ( autoExecAfterMapLoadPending ) {
+	} else if ( autoExecAfterMapLoadPending || autoExecAfterMapLoadWaitingLogged ) {
+		common->Printf( "AutoExecAfterMapLoad: skipped because g_autoExecAfterMapLoad was cleared before execution\n" );
 		autoExecAfterMapLoadPending = false;
+		autoExecAfterMapLoadWaitingLogged = false;
 	}
 
 	if ( !autoExecAfterMapLoadPending ) {
@@ -4880,15 +4904,16 @@ void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
 		idCmdArgs execArgs;
 		execArgs.AppendArg( "exec" );
 		execArgs.AppendArg( execPath );
-		common->Printf( "AutoExecAfterMapLoad: exec %s at %d ms\n",
+		common->Printf( "AutoExecAfterMapLoad: executed %s at %d ms\n",
 			execPath,
 			nowMs - autoExecAfterMapLoadStartTime );
 		cmdSystem->BufferCommandArgs( CMD_EXEC_NOW, execArgs );
 	} else {
-		common->Warning( "AutoExecAfterMapLoad: rejected unsafe cfg path '%s'", execPath ? execPath : "" );
+		common->Warning( "AutoExecAfterMapLoad: skipped unsafe cfg path '%s'", execPath ? execPath : "" );
 	}
 
 	autoExecAfterMapLoadPending = false;
+	autoExecAfterMapLoadWaitingLogged = false;
 	g_autoExecAfterMapLoad.SetString( "" );
 	cvarSystem->SetCVarString( "g_autoExecAfterMapLoad", "" );
 }

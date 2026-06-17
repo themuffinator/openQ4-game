@@ -478,6 +478,7 @@ public:
 	int						mHz;					// hertz
 	int						autoExecAfterMapLoadStartTime;
 	bool					autoExecAfterMapLoadPending;
+	bool					autoExecAfterMapLoadWaitingLogged;
 
 	int						vacuumAreaNum;			// -1 if level doesn't have any outside areas
 

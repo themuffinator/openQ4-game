@@ -2355,6 +2355,10 @@ gameReturn_t idGameLocal::ClientPrediction( int clientNum, const usercmd_t *clie
 		mpInteractionsGenerated = true;
 	}
 
+	if ( clientNum == localClientNum && isNewFrame && lastPredictFrame ) {
+		CheckAutoExecAfterMapLoad();
+	}
+
 	// show any debug info for this frame
 	if ( isNewFrame ) {
 		RunDebugInfo();

@@ -428,6 +428,7 @@ public:
 	int						mHz;					// hertz
 	int						autoExecAfterMapLoadStartTime;
 	bool					autoExecAfterMapLoadPending;
+	bool					autoExecAfterMapLoadWaitingLogged;
 	int						autoScreenshotStartTime;
 	bool					autoScreenshotPending;
 	int						autoMachinegunImpactStartTime;

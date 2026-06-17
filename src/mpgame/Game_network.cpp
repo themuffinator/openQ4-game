@@ -2545,6 +2545,10 @@ gameReturn_t idGameLocal::ClientPrediction( int clientNum, const usercmd_t *clie
 		D_DrawDebugLines();
 	}
 
+	if ( clientNum == localClientNum && isNewFrame && lastPredictFrame ) {
+		CheckAutoExecAfterMapLoad();
+	}
+
 	if ( sessionCommand.Length() ) {
 		strncpy( ret.sessionCommand, sessionCommand, sizeof( ret.sessionCommand ) );
 		sessionCommand = "";
