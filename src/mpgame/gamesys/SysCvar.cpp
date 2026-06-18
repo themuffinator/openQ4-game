@@ -466,10 +466,10 @@ idCVar g_systemLinkMatch(	"g_systemLinkMatch",		"0",	CVAR_INTEGER, "In a system 
 //idCVar ui_LiveRecruitPMemberRecruit(	"ui_LiveRecruitPMemberRecruit",	"0",					CVAR_GAME | CVAR_USERINFO, "give the recruit member recruit permissions\n");
 #endif
 
-idCVar pm_zoomedSlow(				"pm_zoomedSlow",			"100",			CVAR_GAME | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NOCHEAT | CVAR_NORESET, "Slow look speed while zoomed 0..100% of speed");
+idCVar pm_zoomedSlow(				"pm_zoomedSlow",			"50",			CVAR_GAME | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_NOCHEAT | CVAR_NORESET, "look sensitivity while scoped/zoomed (1..100% of normal speed)", 1, 100, idCmdSystem::ArgCompletion_Integer<1,100> );
 
 #ifndef _XENON
-idCVar pm_isZoomed(					"pm_isZoomed",			"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT | CVAR_NORESET, "if nonzero, is the slow speed");
+idCVar pm_isZoomed(					"pm_isZoomed",			"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT | CVAR_NORESET, "active scoped look sensitivity percent; 0 when not scoped");
 #endif
 
 // nmckenzie: added ability to try alternate accelerations.
