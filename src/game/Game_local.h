@@ -105,6 +105,9 @@ class idLocationEntity;
 
 void gameError( const char *fmt, ... );
 void rvNormalizeProjectedRenderLight( renderLight_t &light, const char *ownerName, const char *lightName );
+void gameDebugLogDamage( const char *source, idEntity *victim, idEntity *inflictor, idEntity *attacker,
+	const idDict *damageDef, const char *damageDefName, const idVec3 &dir, float damageScale, int location,
+	int damage, int armorSave, int healthBefore, int healthAfter, int methodOfDeath );
 
 #include "gamesys/Event.h"
 // RAVEN BEGIN

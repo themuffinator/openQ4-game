@@ -929,8 +929,14 @@ int idPush::TryTranslatePushEntity( trace_t &results, idEntity *check, idClipMod
 		// move entity in reverse only colliding with pusher
 		ClipEntityTranslation( results, check, clipModel, NULL, -move );
 		// If the entity is hovering just above a fast-rising pusher, the reverse trace can
-		// miss the contact even though the pusher's final position would overlap it.
+		// miss the contact even though the pusher's final position would overlap it. Keep
+		// this compatibility nudge limited to upward movement; retail lets descending bound
+		// solids move away without turning a late destination overlap into a crush.
 		if ( results.fraction >= 1.0f ) {
+			if ( ( move * -physics->GetGravityNormal() ) <= 0.0f ) {
+				return PUSH_NO;
+			}
+
 			const idVec3 oldClipOrigin = clipModel->GetOrigin();
 			const idMat3 clipAxis = clipModel->GetAxis();
 

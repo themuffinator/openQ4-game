@@ -38,6 +38,7 @@ extern idCVar	g_debugBounds;
 extern idCVar	g_debugAnim;
 extern idCVar	g_debugMove;
 extern idCVar	g_debugDamage;
+extern idCVar	g_debugDamageDetails;
 extern idCVar	g_debugWeapon;
 extern idCVar	g_debugScript;
 extern idCVar	g_debugMover;

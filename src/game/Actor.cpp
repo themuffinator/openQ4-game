@@ -2470,6 +2470,16 @@ void idActor::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir
 		attacker->DamageFeedback( this, inflictor, damage );
 	}
 
+	int debugMethodOfDeath = -1;
+	if ( inflictor->IsType( idProjectile::GetClassType() ) ) {
+		debugMethodOfDeath = static_cast<idProjectile*>(inflictor)->methodOfDeath;
+	} else if ( inflictor->IsType( idPlayer::GetClassType() ) ) {
+		debugMethodOfDeath = static_cast<idPlayer*>(inflictor)->GetCurrentWeapon();
+	}
+
+	gameDebugLogDamage( "idActor", this, inflictor, attacker, damageDef, damageDefName, dir, damageScale, location,
+		damage, -1, health, health - damage, debugMethodOfDeath );
+
 // RAVEN BEGIN
 // jnewquist: FIXME - Was this removed from Xenon intentionally?
 #ifdef _XENON

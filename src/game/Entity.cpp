@@ -8,6 +8,7 @@
 #include "client/ClientEffect.h"
 //mcg: need to know team for AddDamageEffects
 #include "ai/AI_Manager.h"
+#include "Trigger.h"
 // RAVEN END
 
 /*
@@ -3709,6 +3710,84 @@ void idEntity::DamageFeedback( idEntity *victim, idEntity *inflictor, int &damag
 	// implemented in subclasses
 }
 
+static const char *gameDebugDamageName( const idEntity *ent ) {
+	return ent ? ent->GetName() : "<null>";
+}
+
+static const char *gameDebugDamageClass( const idEntity *ent ) {
+	return ent ? ent->GetClassname() : "<null>";
+}
+
+static int gameDebugDamageEntityNumber( const idEntity *ent ) {
+	return ent ? ent->entityNumber : -1;
+}
+
+void gameDebugLogDamage( const char *source, idEntity *victim, idEntity *inflictor, idEntity *attacker,
+	const idDict *damageDef, const char *damageDefName, const idVec3 &dir, float damageScale, int location,
+	int damage, int armorSave, int healthBefore, int healthAfter, int methodOfDeath ) {
+	if ( !g_debugDamageDetails.GetBool() ) {
+		return;
+	}
+
+	idPhysics *physics = victim ? victim->GetPhysics() : NULL;
+	idStr origin( physics ? physics->GetOrigin().ToString( 2 ) : "<none>" );
+	idStr velocity( physics ? physics->GetLinearVelocity().ToString( 2 ) : "<none>" );
+	idStr boundsMins( physics ? physics->GetAbsBounds()[0].ToString( 2 ) : "<none>" );
+	idStr boundsMaxs( physics ? physics->GetAbsBounds()[1].ToString( 2 ) : "<none>" );
+	idStr damageDir( dir.ToString( 2 ) );
+
+	const int baseDamage = damageDef ? damageDef->GetInt( "damage" ) : 0;
+	const int noArmor = damageDef ? damageDef->GetBool( "noArmor" ) : 0;
+	const int noGod = damageDef ? damageDef->GetBool( "noGod" ) : 0;
+	const int gib = damageDef ? damageDef->GetBool( "gib" ) : 0;
+	const int dmgGib = damageDef ? damageDef->GetBool( "DMG_gib" ) : 0;
+	const int telefrag = damageDef ? damageDef->GetBool( "telefrag" ) : 0;
+	const int ignorePlayer = damageDef ? damageDef->GetBool( "ignore_player" ) : 0;
+	const int hazard = damageDef ? damageDef->GetBool( "hazard" ) : 0;
+	const int knockback = damageDef ? damageDef->GetInt( "knockback" ) : 0;
+	const float push = damageDef ? damageDef->GetFloat( "push" ) : 0.0f;
+
+	gameLocal.Printf(
+		"DBG_DAMAGE source=%s time=%d victim=%d:%s:%s origin=%s velocity=%s bounds=%s..%s health=%d->%d "
+		"inflictor=%d:%s:%s attacker=%d:%s:%s def=%s base=%d final=%d armor=%d scale=%.3f loc=%d mod=%d "
+		"flags=noArmor:%d noGod:%d gib:%d dmgGib:%d telefrag:%d ignorePlayer:%d hazard:%d knockback:%d push:%.3f dir=%s\n",
+		source ? source : "<null>",
+		gameLocal.time,
+		gameDebugDamageEntityNumber( victim ),
+		gameDebugDamageName( victim ),
+		gameDebugDamageClass( victim ),
+		origin.c_str(),
+		velocity.c_str(),
+		boundsMins.c_str(),
+		boundsMaxs.c_str(),
+		healthBefore,
+		healthAfter,
+		gameDebugDamageEntityNumber( inflictor ),
+		gameDebugDamageName( inflictor ),
+		gameDebugDamageClass( inflictor ),
+		gameDebugDamageEntityNumber( attacker ),
+		gameDebugDamageName( attacker ),
+		gameDebugDamageClass( attacker ),
+		damageDefName ? damageDefName : "<null>",
+		baseDamage,
+		damage,
+		armorSave,
+		damageScale,
+		location,
+		methodOfDeath,
+		noArmor,
+		noGod,
+		gib,
+		dmgGib,
+		telefrag,
+		ignorePlayer,
+		hazard,
+		knockback,
+		push,
+		damageDir.c_str()
+	);
+}
+
 /*
 ============
 Damage
@@ -3754,6 +3833,8 @@ void idEntity::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 
 	// inform the attacker that they hit someone
 	attacker->DamageFeedback( this, inflictor, damage );
+	gameDebugLogDamage( "idEntity", this, inflictor, attacker, damageDef, damageDefName, dir, damageScale, location,
+		damage, -1, health, health - damage, -1 );
 	if ( damage ) {
 		// do the damage
 		//jshepard: this is kinda important, no?
@@ -4731,9 +4812,10 @@ bool idEntity::TouchTriggers( const idTypeInfo* ownerType ) const {
 // abahr: needed so tram car can has collision model and touch triggers
 			bool useSimpleClip = spawnArgs.GetBool("useSimpleTriggerClip");
 			bool triggerHit = useSimpleClip || ( GetPhysics()->ClipContents( cm ) != 0 );
-			if ( !triggerHit && IsType( idPlayer::GetClassType() ) ) {
+			if ( !triggerHit && IsType( idPlayer::GetClassType() ) && !ent->IsType( idTrigger_Hurt::GetClassType() ) ) {
 				// x64 can miss some trigger contacts in precise clip tests for player hulls.
-				// Fall back to bounds overlap for players to keep trigger/door activation reliable.
+				// Fall back to bounds overlap for non-damaging player triggers to keep trigger/door activation reliable.
+				// Hurt triggers must stay on the retail precise clip path; bounds-only touches can overlap kill volumes.
 				triggerHit = GetPhysics()->GetAbsBounds().IntersectsBounds( cm->GetAbsBounds() );
 			}
 			if ( !triggerHit ) {

@@ -55,7 +55,14 @@ struct openq4PostAASchedule_t {
 	openq4PostAASourceColorSpace_t sourceColorSpace;
 	const char* sourceColorSpaceName;
 	const char* smaaQualityName;
+	const char* smaaEdgeModeName;
 	idVec4 smaaQuality;
+};
+
+struct openq4SMAAQualityPreset_t {
+	const char* name;
+	const char* edgeModeName;
+	idVec4 shaderParams; // x=edge mode, y=edge threshold, z=max search steps, w=local contrast scale.
 };
 
 struct openq4SMAAResources_t {
@@ -117,33 +124,50 @@ static bool PostAAModeUsesSMAA( const openq4PostAAMode_t mode ) {
 		mode == OPENQ4_POST_AA_SMAA_1X_COLOR_PROTOTYPE;
 }
 
-static const char* PostAASMAAQualityName( const openq4PostAAMode_t mode ) {
+static openq4SMAAQualityPreset_t PostAASMAAQualityPreset( const openq4PostAAMode_t mode ) {
+	openq4SMAAQualityPreset_t preset;
+	preset.name = "none";
+	preset.edgeModeName = "none";
+	preset.shaderParams = idVec4( 0.0f, 0.0f, 0.0f, 0.0f );
+
 	switch ( mode ) {
 	case OPENQ4_POST_AA_SMAA_1X_HIGH:
-		return "high-luma";
+		preset.name = "high-luma";
+		preset.edgeModeName = "luma";
+		preset.shaderParams = idVec4( 0.0f, 0.10f, 16.0f, 2.0f );
+		break;
 	case OPENQ4_POST_AA_SMAA_1X_ULTRA:
-		return "ultra-luma";
+		preset.name = "ultra-luma";
+		preset.edgeModeName = "luma";
+		preset.shaderParams = idVec4( 0.0f, 0.05f, 32.0f, 2.0f );
+		break;
 	case OPENQ4_POST_AA_SMAA_1X_COLOR_PROTOTYPE:
-		return "color-edge-prototype";
+		preset.name = "color-edge-prototype";
+		preset.edgeModeName = "color";
+		preset.shaderParams = idVec4( 1.0f, 0.10f, 16.0f, 2.0f );
+		break;
 	case OPENQ4_POST_AA_SMAA_1X_MEDIUM:
-		return "medium-luma";
+		preset.name = "medium-luma";
+		preset.edgeModeName = "luma";
+		preset.shaderParams = idVec4( 0.0f, 0.10f, 8.0f, 2.0f );
+		break;
 	default:
-		return "none";
+		break;
 	}
+
+	return preset;
+}
+
+static const char* PostAASMAAQualityName( const openq4PostAAMode_t mode ) {
+	return PostAASMAAQualityPreset( mode ).name;
+}
+
+static const char* PostAASMAAEdgeModeName( const openq4PostAAMode_t mode ) {
+	return PostAASMAAQualityPreset( mode ).edgeModeName;
 }
 
 static idVec4 PostAASMAAQualityVector( const openq4PostAAMode_t mode ) {
-	switch ( mode ) {
-	case OPENQ4_POST_AA_SMAA_1X_HIGH:
-		return idVec4( 0.0f, 0.10f, 16.0f, 2.0f );
-	case OPENQ4_POST_AA_SMAA_1X_ULTRA:
-		return idVec4( 0.0f, 0.05f, 32.0f, 2.0f );
-	case OPENQ4_POST_AA_SMAA_1X_COLOR_PROTOTYPE:
-		return idVec4( 1.0f, 0.10f, 16.0f, 2.0f );
-	case OPENQ4_POST_AA_SMAA_1X_MEDIUM:
-	default:
-		return idVec4( 0.0f, 0.10f, 8.0f, 2.0f );
-	}
+	return PostAASMAAQualityPreset( mode ).shaderParams;
 }
 
 static openq4SMAAResources_t BuildSMAAResources( rvmGameRender_t& gameRender ) {
@@ -392,13 +416,18 @@ static void LogSMAAResourceOwnership( const openq4SMAAResources_t& resources, co
 		return;
 	}
 
+	const openq4SMAAQualityPreset_t qualityPreset = PostAASMAAQualityPreset( mode );
 	common->Printf(
-		"PostAA SMAA resource ownership: sceneSource=%s, edgeBlend=%s, weightsFinal=%s; sourceSpace=%s; quality=%s; pass clears=edge,weights,blend,normalize\n",
+		"PostAA SMAA resource ownership: sceneSource=%s, edgeBlend=%s, weightsFinal=%s; sourceSpace=%s; quality=%s edgeMode=%s threshold=%.3f searchSteps=%.0f localContrast=%.2f; pass clears=edge,weights,blend,normalize\n",
 		resources.sceneSourceName,
 		resources.edgeBlendName,
 		resources.weightsFinalName,
 		PostAASourceColorSpaceName( sourceColorSpace ),
-		PostAASMAAQualityName( mode ) );
+		qualityPreset.name,
+		qualityPreset.edgeModeName,
+		qualityPreset.shaderParams.y,
+		qualityPreset.shaderParams.z,
+		qualityPreset.shaderParams.w );
 
 	loggedSceneSource = resources.sceneSource;
 	loggedEdgeBlend = resources.edgeBlend;
@@ -508,6 +537,7 @@ static openq4PostAASchedule_t BuildPostAAPasses( rvmGameRender_t& gameRender, co
 	schedule.sourceColorSpace = OPENQ4_POST_AA_SOURCE_NONE;
 	schedule.sourceColorSpaceName = PostAASourceColorSpaceName( schedule.sourceColorSpace );
 	schedule.smaaQualityName = PostAASMAAQualityName( schedule.requestedMode );
+	schedule.smaaEdgeModeName = PostAASMAAEdgeModeName( schedule.requestedMode );
 	schedule.smaaQuality = PostAASMAAQualityVector( schedule.requestedMode );
 	SetPostAAScheduleSize( schedule, gameRender.postProcessRT[0], gameRender.postProcessRT[0] );
 
@@ -534,6 +564,7 @@ static openq4PostAASchedule_t BuildPostAAPasses( rvmGameRender_t& gameRender, co
 			schedule.sourceColorSpace = ResolvePostAASourceColorSpace();
 			schedule.sourceColorSpaceName = PostAASourceColorSpaceName( schedule.sourceColorSpace );
 			schedule.smaaQualityName = PostAASMAAQualityName( schedule.effectiveMode );
+			schedule.smaaEdgeModeName = PostAASMAAEdgeModeName( schedule.effectiveMode );
 			schedule.smaaQuality = PostAASMAAQualityVector( schedule.effectiveMode );
 			SetPostAAScheduleSize( schedule, gameRender.postProcessRT[2], gameRender.postProcessRT[0] );
 		}
@@ -569,6 +600,10 @@ static void LogPostAASchedule( const openq4PostAASchedule_t& schedule, const boo
 	static int loggedOutputHeight = -1;
 	static int loggedSourceColorSpace = -1;
 	static idStr loggedSMAAQualityName;
+	static idStr loggedSMAAEdgeModeName;
+	static float loggedSMAAThreshold = -9999.0f;
+	static float loggedSMAASearchSteps = -9999.0f;
+	static float loggedSMAALocalContrast = -9999.0f;
 	const int smaaResourcesFlag = smaaResourcesAvailable ? 1 : 0;
 
 	if ( loggedRequestedValue == schedule.requestedCvarValue &&
@@ -581,16 +616,24 @@ static void LogPostAASchedule( const openq4PostAASchedule_t& schedule, const boo
 		loggedOutputWidth == schedule.outputWidth &&
 		loggedOutputHeight == schedule.outputHeight &&
 		loggedSourceColorSpace == schedule.sourceColorSpace &&
-		loggedSMAAQualityName.Icmp( schedule.smaaQualityName ) == 0 ) {
+		loggedSMAAQualityName.Icmp( schedule.smaaQualityName ) == 0 &&
+		loggedSMAAEdgeModeName.Icmp( schedule.smaaEdgeModeName ) == 0 &&
+		loggedSMAAThreshold == schedule.smaaQuality.y &&
+		loggedSMAASearchSteps == schedule.smaaQuality.z &&
+		loggedSMAALocalContrast == schedule.smaaQuality.w ) {
 		return;
 	}
 
 	common->Printf(
-		"PostAA requested=%s cvar=%d effective=%s quality=%s source=%s(%dx%d) output=%s(%dx%d) sourceSpace=%s reason=%s smaaResources=%s\n",
+		"PostAA requested=%s cvar=%d effective=%s quality=%s edgeMode=%s threshold=%.3f searchSteps=%.0f localContrast=%.2f source=%s(%dx%d) output=%s(%dx%d) sourceSpace=%s reason=%s smaaResources=%s\n",
 		PostAAModeName( schedule.requestedMode ),
 		schedule.requestedCvarValue,
 		PostAAModeName( schedule.effectiveMode ),
 		schedule.smaaQualityName,
+		schedule.smaaEdgeModeName,
+		schedule.smaaQuality.y,
+		schedule.smaaQuality.z,
+		schedule.smaaQuality.w,
 		schedule.sourceImageName,
 		schedule.sourceWidth,
 		schedule.sourceHeight,
@@ -612,6 +655,10 @@ static void LogPostAASchedule( const openq4PostAASchedule_t& schedule, const boo
 	loggedOutputHeight = schedule.outputHeight;
 	loggedSourceColorSpace = schedule.sourceColorSpace;
 	loggedSMAAQualityName = schedule.smaaQualityName;
+	loggedSMAAEdgeModeName = schedule.smaaEdgeModeName;
+	loggedSMAAThreshold = schedule.smaaQuality.y;
+	loggedSMAASearchSteps = schedule.smaaQuality.z;
+	loggedSMAALocalContrast = schedule.smaaQuality.w;
 }
 
 static bool openQ4_BuildPortalSkyCaptureView( const renderView_t *view, renderView_t *portalSkyView ) {
@@ -748,7 +795,7 @@ static bool openQ4_ApplySMAA( rvmGameRender_t& gameRender, const openq4PostAASou
 	LogSMAARenderTargetSizes( gameRender );
 	const openq4SMAAResources_t resources = BuildSMAAResources( gameRender );
 	LogSMAAResourceOwnership( resources, sourceColorSpace, mode );
-	renderSystem->SetPostProcessSMAAQuality( PostAASMAAQualityVector( mode ) );
+	renderSystem->SetPostProcessSMAAQuality( PostAASMAAQualityPreset( mode ).shaderParams );
 
 	openq4SMAAPass_t passes[4];
 	memset( passes, 0, sizeof( passes ) );

@@ -11565,6 +11565,13 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 	}
 // jmarshall end
 	
+	int debugMethodOfDeath = -1;
+	if ( inflictor->IsType( idProjectile::GetClassType() ) ) {
+		debugMethodOfDeath = static_cast<idProjectile*>(inflictor)->methodOfDeath;
+	} else if ( inflictor->IsType( idPlayer::Type ) ) {
+		debugMethodOfDeath = static_cast<idPlayer*>(inflictor)->GetCurrentWeapon();
+	}
+
 //RAVEN BEGIN
 //asalmon: Xenon needs stats in singleplayer
 #ifndef _XENON
@@ -11633,6 +11640,8 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 		}
 
 		int oldHealth = health;
+		gameDebugLogDamage( "idPlayer", this, inflictor, attacker, &damageDef->dict, damageDefName, dir, damageScale, location,
+			damage, armorSave, oldHealth, oldHealth - damage, debugMethodOfDeath );
 		health -= damage;
 
 		GAMELOG_ADD ( va("player%d_damage_taken", entityNumber ), damage );
@@ -11677,6 +11686,8 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 			}
 		}
 	} else {
+		gameDebugLogDamage( "idPlayer", this, inflictor, attacker, &damageDef->dict, damageDefName, dir, damageScale, location,
+			damage, armorSave, health, health, debugMethodOfDeath );
  		// don't accumulate impulses
 		if ( af.IsLoaded() ) {
 			// clear impacts

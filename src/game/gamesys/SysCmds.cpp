@@ -445,6 +445,188 @@ static void Cmd_MccLandingBorkedLiftTest_f( const idCmdArgs &args ) {
 	);
 }
 
+/*
+===================
+Cmd_LogProcess1IntroLiftState
+===================
+*/
+static void Cmd_LogProcess1IntroLiftState( const char *tag ) {
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	idEntity *elevator = gameLocal.FindEntity( "mvr_platform_intro_new" );
+	idEntity *gui = gameLocal.FindEntity( "stc_operate_lift_button" );
+	idEntity *deadGui = gameLocal.FindEntity( "stc_operate_lift_button_dead" );
+
+	if ( !player ) {
+		gameLocal.Printf( "DBG process1liftstate %s no local player\n", tag );
+		return;
+	}
+
+	idPhysics *physics = player->GetPhysics();
+	idEntity *ground = player->GetGroundEntity();
+	const idVec3 &playerOrigin = physics->GetOrigin();
+	const idVec3 &playerVelocity = physics->GetLinearVelocity();
+	const idBounds &playerBounds = physics->GetAbsBounds();
+	idEntity *touchedEntity = NULL;
+	int contents = gameLocal.Contents( player, playerOrigin, physics->GetClipModel(), physics->GetAxis(), physics->GetClipMask(), player, &touchedEntity );
+	const char *touchName = contents ? "<world>" : "<none>";
+	const char *touchClass = contents ? "<world>" : "<none>";
+	int touchEntityNum = contents ? ENTITYNUM_WORLD : -1;
+
+	if ( touchedEntity ) {
+		touchName = touchedEntity->GetName();
+		touchClass = touchedEntity->GetClassname();
+		touchEntityNum = touchedEntity->entityNumber;
+	}
+
+	idStr playerMins( playerBounds[0].ToString( 2 ) );
+	idStr playerMaxs( playerBounds[1].ToString( 2 ) );
+	idStr elevatorOrigin( elevator ? elevator->GetPhysics()->GetOrigin().ToString( 2 ) : "<removed>" );
+	idStr elevatorMins( elevator ? elevator->GetPhysics()->GetAbsBounds()[0].ToString( 2 ) : "<removed>" );
+	idStr elevatorMaxs( elevator ? elevator->GetPhysics()->GetAbsBounds()[1].ToString( 2 ) : "<removed>" );
+	idStr guiMins( gui ? gui->GetPhysics()->GetAbsBounds()[0].ToString( 2 ) : "<removed>" );
+	idStr guiMaxs( gui ? gui->GetPhysics()->GetAbsBounds()[1].ToString( 2 ) : "<removed>" );
+	idStr deadGuiMins( deadGui ? deadGui->GetPhysics()->GetAbsBounds()[0].ToString( 2 ) : "<removed>" );
+	idStr deadGuiMaxs( deadGui ? deadGui->GetPhysics()->GetAbsBounds()[1].ToString( 2 ) : "<removed>" );
+
+	gameLocal.Printf(
+		"DBG process1liftstate %s p=%s v=%s ground=%d:%s:%s contacts=%d contents=%d touch=%d:%s:%s "
+		"playerBounds=%s..%s lift=%s liftHidden=%d liftContents=%d liftBounds=%s..%s "
+		"guiHidden=%d guiContents=%d guiBounds=%s..%s deadGuiHidden=%d deadGuiContents=%d deadGuiBounds=%s..%s\n",
+		tag,
+		playerOrigin.ToString( 2 ),
+		playerVelocity.ToString( 2 ),
+		ground ? ground->entityNumber : -1,
+		ground ? ground->GetName() : "<none>",
+		ground ? ground->GetClassname() : "<none>",
+		physics->GetNumContacts(),
+		contents,
+		touchEntityNum,
+		touchName,
+		touchClass,
+		playerMins.c_str(),
+		playerMaxs.c_str(),
+		elevatorOrigin.c_str(),
+		elevator ? elevator->IsHidden() : -1,
+		elevator ? elevator->GetPhysics()->GetContents() : -1,
+		elevatorMins.c_str(),
+		elevatorMaxs.c_str(),
+		gui ? gui->IsHidden() : -1,
+		gui ? gui->GetPhysics()->GetContents() : -1,
+		guiMins.c_str(),
+		guiMaxs.c_str(),
+		deadGui ? deadGui->IsHidden() : -1,
+		deadGui ? deadGui->GetPhysics()->GetContents() : -1,
+		deadGuiMins.c_str(),
+		deadGuiMaxs.c_str()
+	);
+}
+
+/*
+===================
+Cmd_Process1IntroLiftState_f
+===================
+*/
+static void Cmd_Process1IntroLiftState_f( const idCmdArgs &args ) {
+	Cmd_LogProcess1IntroLiftState( args.Argc() > 1 ? args.Argv( 1 ) : "manual" );
+}
+
+/*
+===================
+Cmd_Process1IntroLiftDeathTest_f
+===================
+*/
+static void Cmd_Process1IntroLiftDeathTest_f( const idCmdArgs &args ) {
+	idStr mapName = gameLocal.GetMapName();
+
+	mapName.BackSlashesToSlashes();
+	mapName.StripFileExtension();
+	if ( mapName.Icmp( "game/process1" ) != 0 && mapName.Icmp( "maps/game/process1" ) != 0 ) {
+		gameLocal.Printf( "process1IntroLiftDeathTest requires map game/process1; current map is %s\n", mapName.c_str() );
+		return;
+	}
+
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	idEntity *gui = gameLocal.FindEntity( "stc_operate_lift_button" );
+	idEntity *elevator = gameLocal.FindEntity( "mvr_platform_intro_new" );
+
+	if ( !player ) {
+		gameLocal.Printf( "process1IntroLiftDeathTest has no local player\n" );
+		return;
+	}
+	if ( !gui || !elevator ) {
+		gameLocal.Printf(
+			"process1IntroLiftDeathTest missing gui/elevator gui=%p elevator=%p\n",
+			gui,
+			elevator
+		);
+		return;
+	}
+
+	if ( args.Argc() != 1 && args.Argc() != 4 && args.Argc() != 5 ) {
+		gameLocal.Printf( "usage: process1IntroLiftDeathTest [<view x> <view y> <view z> [yaw]]\n" );
+		return;
+	}
+
+	idVec3 viewOrigin( -2496.0f, 0.0f, 24.0f );
+	idAngles angles( 0.0f, 180.0f, 0.0f );
+	if ( args.Argc() >= 4 ) {
+		viewOrigin.x = atof( args.Argv( 1 ) );
+		viewOrigin.y = atof( args.Argv( 2 ) );
+		viewOrigin.z = atof( args.Argv( 3 ) );
+	}
+	if ( args.Argc() == 5 ) {
+		angles.yaw = atof( args.Argv( 4 ) );
+	}
+
+	idVec3 origin = viewOrigin;
+	origin.z -= pm_normalviewheight.GetFloat() - 0.25f;
+	player->Unbind();
+	player->Teleport( origin, angles, NULL );
+	player->TouchTriggers();
+	Cmd_LogProcess1IntroLiftState( "placed" );
+
+	const bool handled = gui->HandleGuiCommands( gui, "changefloor down" );
+	gameLocal.Printf(
+		"DBG process1liftgui handled=%d gui=%d:%s:%s elevator=%d:%s:%s view=%s origin=%s\n",
+		handled ? 1 : 0,
+		gui->entityNumber,
+		gui->GetName(),
+		gui->GetClassname(),
+		elevator->entityNumber,
+		elevator->GetName(),
+		elevator->GetClassname(),
+		viewOrigin.ToString( 2 ),
+		origin.ToString( 2 )
+	);
+	Cmd_LogProcess1IntroLiftState( "triggered" );
+
+	cmdSystem->BufferCommandText(
+		CMD_EXEC_INSERT,
+		"waitMsec 250\n"
+		"process1IntroLiftState t025\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t050\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t075\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t100\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t125\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t150\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t175\n"
+		"waitMsec 250\n"
+		"process1IntroLiftState t200\n"
+		"waitMsec 500\n"
+		"process1IntroLiftState t250\n"
+		"waitMsec 1000\n"
+		"process1IntroLiftState t350\n"
+		"waitMsec 1000\n"
+		"process1IntroLiftState t450\n"
+	);
+}
+
 // RAVEN BEGIN
 // jscott: exports for tracking memory
 /*
@@ -3697,6 +3879,8 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "setviewpos",			Cmd_SetViewpos_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"sets the current view position" );
 	cmdSystem->AddCommand( "mccLandingBorkedLiftTest", Cmd_MccLandingBorkedLiftTest_f, CMD_FL_GAME|CMD_FL_CHEAT, "sets up the MCC Landing broken lift repro" );
 	cmdSystem->AddCommand( "mccLandingBorkedLiftState", Cmd_MccLandingBorkedLiftState_f, CMD_FL_GAME|CMD_FL_CHEAT, "prints MCC Landing broken lift player contact state" );
+	cmdSystem->AddCommand( "process1IntroLiftDeathTest", Cmd_Process1IntroLiftDeathTest_f, CMD_FL_GAME|CMD_FL_CHEAT, "sets up the process1 intro lift death repro" );
+	cmdSystem->AddCommand( "process1IntroLiftState", Cmd_Process1IntroLiftState_f, CMD_FL_GAME|CMD_FL_CHEAT, "prints process1 intro lift player contact state" );
 	cmdSystem->AddCommand( "gotolevelshot",			Cmd_GotoLevelshot_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"moves the view to the levelshot position" );
 	cmdSystem->AddCommand( "teleport",				Cmd_Teleport_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"teleports the player to an entity location", idGameLocal::ArgCompletion_EntityName );
 	cmdSystem->AddCommand( "trigger",				Cmd_Trigger_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"triggers an entity", idGameLocal::ArgCompletion_EntityName );
