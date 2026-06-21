@@ -2773,6 +2773,169 @@ static void Cmd_AASStats_f( const idCmdArgs &args ) {
 	}
 }
 
+static bool AIDumpState_ShouldPrintField( const char *name, bool verbose ) {
+	static const char *fields[] = {
+		"aifl.activated",
+		"aifl.dead",
+		"aifl.scripted",
+		"combat.fl.aware",
+		"combat.fl.ignoreEnemies",
+		"combat.fl.seenEnemyDirectly",
+		"combat.tacticalCurrent",
+		"enemy",
+		"enemy.fl.inFov",
+		"enemy.fl.visible",
+		"enemy.range",
+		"enemy.ranged2d",
+		"focusType",
+		"lastAttackTime",
+		"lookTarget",
+		"move.command",
+		"move.fl.blocked",
+		"move.fl.done",
+		"move.fl.goalUnreachable",
+		"move.fl.moving",
+		"move.fl.obstacleInPath",
+		"move.status",
+		"tether",
+		"IsTethered()",
+		NULL
+	};
+
+	if ( verbose ) {
+		return true;
+	}
+
+	for ( int i = 0; fields[i]; i++ ) {
+		if ( !idStr::Icmp( name, fields[i] ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+struct aiDumpStateContext_t {
+	bool verbose;
+};
+
+static void AIDumpState_DebugInfoProc( const char *classname, const char *name, const char *value, void *userData ) {
+	aiDumpStateContext_t *context = static_cast<aiDumpStateContext_t *>( userData );
+	if ( !AIDumpState_ShouldPrintField( name, context->verbose ) ) {
+		return;
+	}
+	gameLocal.Printf( "    %s.%s = %s\n", classname, name, value );
+}
+
+/*
+==================
+Cmd_AIDumpState_f
+==================
+*/
+static void Cmd_AIDumpState_f( const idCmdArgs &args ) {
+	const char *filter = "";
+	bool verbose = false;
+
+	if ( !gameLocal.CheatsOk() ) {
+		return;
+	}
+
+	for ( int i = 0; i < args.Argc(); i++ ) {
+		const char *arg = args.Argv( i );
+		if ( !idStr::Icmp( arg, "aiDumpState" ) || !idStr::Icmp( arg, "-" ) ) {
+			continue;
+		}
+		if ( !idStr::Icmp( arg, "-v" ) || !idStr::Icmp( arg, "v" ) || !idStr::Icmp( arg, "verbose" ) ) {
+			verbose = true;
+		} else {
+			filter = arg;
+		}
+	}
+
+	gameLocal.Printf( "AI dump state%s%s\n", filter[0] ? " filter=" : "", filter[0] ? filter : "" );
+	gameLocal.Printf( "AAS profiles:\n" );
+	for ( int aasNum = 0; aasNum < gameLocal.GetNumAAS(); aasNum++ ) {
+		idAAS *aas = gameLocal.GetAAS( aasNum );
+		const idAASSettings *settings = aas ? aas->GetSettings() : NULL;
+		idAASFile *file = aas ? aas->GetFile() : NULL;
+		const char *extension = settings ? settings->fileExtension.c_str() : "<unloaded>";
+
+		if ( !file ) {
+			gameLocal.Printf( "  #%d %s unloaded\n", aasNum, extension );
+			continue;
+		}
+
+		int featureAreas = 0;
+		int featureRefs = 0;
+		int badFeatureSpans = 0;
+		int reachabilityCount = 0;
+		for ( int areaNum = 0; areaNum < file->GetNumAreas(); areaNum++ ) {
+			const aasArea_t &area = file->GetArea( areaNum );
+			for ( const idReachability *reach = area.reach; reach != NULL; reach = reach->next ) {
+				reachabilityCount++;
+			}
+			if ( area.numFeatures > 0 ) {
+				featureAreas++;
+				featureRefs += area.numFeatures;
+				if ( area.firstFeature + area.numFeatures > file->GetNumFeatureIndexes() ) {
+					badFeatureSpans++;
+				}
+			}
+		}
+
+		gameLocal.Printf(
+			"  #%d %s file=%s areas=%d reachabilities=%d edges=%d clusters=%d features=%d featureRefs=%d featureAreas=%d badFeatureSpans=%d\n",
+			aasNum,
+			extension,
+			file->GetName(),
+			file->GetNumAreas(),
+			reachabilityCount,
+			file->GetNumEdges(),
+			file->GetNumClusters(),
+			file->GetNumFeatures(),
+			featureRefs,
+			featureAreas,
+			badFeatureSpans
+		);
+	}
+
+	int count = 0;
+	aiDumpStateContext_t context;
+	context.verbose = verbose;
+
+	gameLocal.Printf( "AI entities:\n" );
+	for ( idEntity *ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+		if ( !ent->IsType( idAI::GetClassType() ) ) {
+			continue;
+		}
+		if ( filter[0] &&
+			idStr::Icmp( ent->GetName(), filter ) &&
+			idStr::Icmp( ent->GetEntityDefName(), filter ) &&
+			idStr::Icmp( ent->GetEntityDefClassName(), filter ) ) {
+			continue;
+		}
+
+		idAI *ai = static_cast<idAI *>( ent );
+		const idVec3 &origin = ai->GetPhysics()->GetOrigin();
+		gameLocal.Printf(
+			"  #%d entity=%d name=%s def=%s class=%s hidden=%d origin=(%.1f %.1f %.1f)\n",
+			count,
+			ent->entityNumber,
+			ent->GetName(),
+			ent->GetEntityDefName(),
+			ent->GetEntityDefClassName(),
+			ent->IsHidden() ? 1 : 0,
+			origin.x,
+			origin.y,
+			origin.z
+		);
+		ai->GetDebugInfo( AIDumpState_DebugInfoProc, &context );
+		count++;
+	}
+
+	gameLocal.Printf( "AI dump complete: %d matching AI entities\n", count );
+}
+
 /*
 ==================
 Cmd_TestDamage_f
@@ -3928,6 +4091,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "reloadanims",			Cmd_ReloadAnims_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"reloads animations" );
 	cmdSystem->AddCommand( "listAnims",				Cmd_ListAnims_f,			CMD_FL_GAME,				"lists all animations" );
 	cmdSystem->AddCommand( "aasStats",				Cmd_AASStats_f,				CMD_FL_GAME,				"shows AAS stats" );
+	cmdSystem->AddCommand( "aiDumpState",			Cmd_AIDumpState_f,			CMD_FL_GAME,				"dumps AAS profile and live AI move/tactical state" );
 	cmdSystem->AddCommand( "testDamage",			Cmd_TestDamage_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests a damage def", idCmdSystem::ArgCompletion_Decl<DECL_ENTITYDEF> );
 	cmdSystem->AddCommand( "weaponSplat",			Cmd_WeaponSplat_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"projects a blood splat on the player weapon" );
 	cmdSystem->AddCommand( "saveSelected",			Cmd_SaveSelected_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"saves the selected entity to the .map file" );

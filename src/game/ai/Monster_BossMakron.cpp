@@ -19,6 +19,7 @@ public:
 	void				Restore							( idRestoreGame *savefile );
 
 	void				BuildActionArray				( void );
+	void				GetDebugInfo					( debugInfoProc_t proc, void* userData );
 
 	//void				ScriptedFace					( idEntity* faceEnt, bool endWithIdle );
 
@@ -265,6 +266,46 @@ void rvMonsterBossMakron::BuildActionArray ( void ) {
 	actionArray[ MAKRON_ACTION_KILLPLAYER ] = &actionKillPlayer;
 
 }
+
+static const char *MakronActionStatus( const rvAIAction &action ) {
+	int status = static_cast<int>( action.status );
+	if ( status < 0 || status >= rvAIAction::STATUS_MAX ) {
+		return "<invalid>";
+	}
+	return aiActionStatusString[ status ];
+}
+
+/*
+================
+rvMonsterBossMakron::GetDebugInfo
+================
+*/
+void rvMonsterBossMakron::GetDebugInfo ( debugInfoProc_t proc, void* userData ) {
+	idAI::GetDebugInfo( proc, userData );
+
+	proc( "rvMonsterBossMakron", "patternedMode", patternedMode ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "noIdle", noIdle ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "flagTeleporting", flagTeleporting ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "flagFlyingMode", flagFlyingMode ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "flagFakeDeath", flagFakeDeath ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "flagAllowSpawns", flagAllowSpawns ? "true" : "false", userData );
+	proc( "rvMonsterBossMakron", "actionPatterned", va( "%d", actionPatterned ), userData );
+	proc( "rvMonsterBossMakron", "scriptRecharge", scriptRecharge.GetFuncName() ? scriptRecharge.GetFuncName() : "<none>", userData );
+	proc( "rvMonsterBossMakron", "scriptTeleport", scriptTeleport.GetFuncName() ? scriptTeleport.GetFuncName() : "<none>", userData );
+
+	proc( "rvMonsterBossMakron", "action_DMGAttack", MakronActionStatus( actionDMGAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_meleeAttack", MakronActionStatus( actionMeleeAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_cannonAttack", MakronActionStatus( actionCannonAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_cannonsweepAttack", MakronActionStatus( actionCannonSweepAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_grenadeAttack", MakronActionStatus( actionGrenadeAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_lightningPattern1Attack", MakronActionStatus( actionLightningPattern1Attack ), userData );
+	proc( "rvMonsterBossMakron", "action_lightningPattern2Attack", MakronActionStatus( actionLightningPattern2Attack ), userData );
+	proc( "rvMonsterBossMakron", "action_stompAttack", MakronActionStatus( actionStompAttack ), userData );
+	proc( "rvMonsterBossMakron", "action_heal", MakronActionStatus( actionHeal ), userData );
+	proc( "rvMonsterBossMakron", "action_charge", MakronActionStatus( actionCharge ), userData );
+	proc( "rvMonsterBossMakron", "action_lightningPattern3Attack", MakronActionStatus( actionKillPlayer ), userData );
+}
+
 /*
 ================
 rvMonsterBossMakron::Save

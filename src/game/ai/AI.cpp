@@ -1395,7 +1395,10 @@ void idAI::UpdateStates ( void ) {
 
 	// Continue updating tactical state if for some reason we dont have one 
 	if ( !aifl.dead && !aifl.scripted && !aifl.action && stateThread.IsIdle ( ) && aifl.scriptedEndWithIdle ) {
-		UpdateTactical ( 0 );
+		if ( !UpdateTactical ( 0 ) && stateThread.IsIdle ( ) && !combat.fl.ignoreEnemies && ( enemy.ent || combat.tacticalMaskUpdate ) ) {
+			// Keep combat actions alive while async tactical searches continue.
+			PostState ( "State_Combat" );
+		}
 	} else {
 		UpdateState();
 	}

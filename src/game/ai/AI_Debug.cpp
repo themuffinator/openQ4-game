@@ -117,6 +117,8 @@ void idAI::GetDebugInfo ( debugInfoProc_t proc, void* userData ) {
 	proc ( "idAI", "aifl.simpleThink",		aifl.simpleThink ? "true" : "false", userData );
 	proc ( "idAI", "aifl.action",			aifl.action ? "true" : "false", userData );
 	proc ( "idAI", "aifl.scripted",			aifl.scripted? "true" : "false", userData );
+	proc ( "idAI", "aifl.scriptedEndWithIdle", aifl.scriptedEndWithIdle ? "true" : "false", userData );
+	proc ( "idAI", "stateThread.IsIdle()",	stateThread.IsIdle() ? "true" : "false", userData );
 
 	proc ( "idAI", "leader",				leader.GetEntity() ? leader.GetEntity()->GetName() : "<none>", userData );
 	proc ( "idAI", "move.followRangeMin",	va("%g",move.followRange[0]), userData );
@@ -127,6 +129,7 @@ void idAI::GetDebugInfo ( debugInfoProc_t proc, void* userData ) {
 	proc ( "idAI", "enemy",					enemy.ent ? enemy.ent->GetName() : "<none>", userData );
 	proc ( "idAI", "enemy.fl.inFov",		enemy.fl.inFov ? "true" : "false", userData );
 	proc ( "idAI", "enemy.fl.visible",		enemy.fl.visible ? "true" : "false", userData );
+	proc ( "idAI", "enemy.fl.sighted",		enemy.fl.sighted ? "true" : "false", userData );
 	proc ( "idAI", "combat.fl.seenEnemyDirectly",combat.fl.seenEnemyDirectly ? "true" : "false", userData );
 	proc ( "idAI", "enemy.lastVisibleTime",	va("%d",enemy.lastVisibleTime), userData );
 	proc ( "idAI", "combat.maxLostVisTime",	va("%d",combat.maxLostVisTime), userData );
@@ -141,6 +144,7 @@ void idAI::GetDebugInfo ( debugInfoProc_t proc, void* userData ) {
 	proc ( "idAI", "move.fl.obstacleInPath",	move.fl.obstacleInPath ? "true" : "false", userData );
 	proc ( "idAI", "move.fl.goalUnreachable",	move.fl.goalUnreachable ? "true" : "false", userData );
 	proc ( "idAI", "move.fl.moving",			move.fl.moving ? "true" : "false", userData );
+	proc ( "idAI", "move.moveType",			va("%d", move.moveType), userData );
 	proc ( "idAI", "move.command",				aiMoveCommandString[move.moveCommand], userData );
 	proc ( "idAI", "move.status",				aiMoveStatusString[move.moveStatus], userData );
 	proc ( "idAI", "move.fl.allowDirectional",	move.fl.allowDirectional ? "true" : "false", userData );
@@ -163,6 +167,8 @@ void idAI::GetDebugInfo ( debugInfoProc_t proc, void* userData ) {
 	proc ( "idAI", "combat.attackRangeMin",		va("%g",combat.attackRange[0]), userData );
 	proc ( "idAI", "combat.attackRangeMax",		va("%g",combat.attackRange[1]), userData );
 	proc ( "idAI", "combat.tacticalCurrent",	aiTacticalString[combat.tacticalCurrent], userData );
+	proc ( "idAI", "combat.tacticalMaskAvailable", va("0x%x", combat.tacticalMaskAvailable), userData );
+	proc ( "idAI", "combat.tacticalMaskUpdate", va("0x%x", combat.tacticalMaskUpdate), userData );
 		
 	proc ( "idAI", "action_rangedAttack",		aiActionStatusString[actionRangedAttack.status], userData );
 	proc ( "idAI", "action_meleeAttack",		aiActionStatusString[actionMeleeAttack.status], userData );
