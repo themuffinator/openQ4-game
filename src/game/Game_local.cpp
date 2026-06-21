@@ -56,6 +56,23 @@ idRenderWorld *				gameRenderWorld = NULL;		// all drawing is done to this world
 
 static gameExport_t			gameExport;
 
+#if defined( OPENQ4_SOUND_HAS_SOUNDWORLD_SKIP )
+static void openQ4_AdvanceCinematicSkipSoundTime( int frameMsec ) {
+	if ( frameMsec <= 0 || soundSystem == NULL ) {
+		return;
+	}
+
+	idSoundWorld *gameSoundWorld = soundSystem->GetSoundWorldFromId( SOUNDWORLD_GAME );
+	if ( gameSoundWorld != NULL ) {
+		gameSoundWorld->Skip( frameMsec );
+	}
+}
+#else
+static void openQ4_AdvanceCinematicSkipSoundTime( int frameMsec ) {
+	(void)frameMsec;
+}
+#endif
+
 static bool rvProjectedLightFloatValid( const float value ) {
 	return !FLOAT_IS_NAN( value ) && !FLOAT_IS_INF( value );
 }
@@ -4210,7 +4227,15 @@ idGameLocal::RunFrame
 		framenum++;
 		previousTime = time;
 		// bdube: use GetMSec access rather than USERCMD_TIME
-		time += GetMSec();
+		const int frameMsec = GetMSec();
+		time += frameMsec;
+
+		// Cinematic skip fast-forwards many game frames in one session frame. Keep
+		// sound time moving with those skipped frames so script-started cinematic
+		// sounds expire while muted instead of resuming after the skip.
+		if ( skipCinematic ) {
+			openQ4_AdvanceCinematicSkipSoundTime( frameMsec );
+		}
 
 		realClientTime = time;
 		player = GetLocalPlayer();
