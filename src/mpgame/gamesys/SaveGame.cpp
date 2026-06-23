@@ -302,7 +302,8 @@ idSaveGame::WriteBounds
 ================
 */
 void idSaveGame::WriteBounds( const idBounds &bounds ) {
-	file->Write( &bounds, sizeof( bounds ) );
+	WriteVec3( bounds[0] );
+	WriteVec3( bounds[1] );
 }
 
 /*
@@ -336,7 +337,9 @@ idSaveGame::WriteAngles
 ================
 */
 void idSaveGame::WriteAngles( const idAngles &angles ) {
-	file->Write( &angles, sizeof( angles ) );
+	WriteFloat( angles.pitch );
+	WriteFloat( angles.yaw );
+	WriteFloat( angles.roll );
 }
 
 /*
@@ -1266,7 +1269,8 @@ idRestoreGame::ReadBounds
 ================
 */
 void idRestoreGame::ReadBounds( idBounds &bounds ) {
-	file->Read( &bounds, sizeof( bounds ) );
+	ReadVec3( bounds[0] );
+	ReadVec3( bounds[1] );
 }
 
 /*
@@ -1299,7 +1303,9 @@ idRestoreGame::ReadAngles
 ================
 */
 void idRestoreGame::ReadAngles( idAngles &angles ) {
-	file->Read( &angles, sizeof( angles ) );
+	ReadFloat( angles.pitch );
+	ReadFloat( angles.yaw );
+	ReadFloat( angles.roll );
 }
 
 /*
