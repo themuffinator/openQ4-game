@@ -50,6 +50,9 @@ file be unloadable in some way (for example, due to script changes).
 #define MAX_PRINT_MSG		4096
 // RAVEN END
 
+static const int MAX_SAVEGAME_OBJECTS = MAX_GENTITIES + MAX_CENTITIES + 4096;
+static const int MAX_SAVEGAME_DICT_ENTRIES = 16384;
+
 /*
 ================
 idSaveGame::idSaveGame()
@@ -1014,6 +1017,29 @@ idRestoreGame::~idRestoreGame()
 idRestoreGame::~idRestoreGame() {
 }
 
+/*
+================
+idRestoreGame::ReadChecked
+================
+*/
+void idRestoreGame::ReadChecked( void *buffer, int len, const char *detail ) {
+	if ( len < 0 ) {
+		Error( "idRestoreGame: invalid negative read length %d while reading %s", len, detail ? detail : "data" );
+	}
+	if ( len == 0 ) {
+		return;
+	}
+	if ( buffer == NULL ) {
+		Error( "idRestoreGame: null destination while reading %s", detail ? detail : "data" );
+	}
+	const int offset = file->Tell();
+	const int bytesRead = file->Read( buffer, len );
+	if ( bytesRead != len ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading %s at offset %d (read %d of %d)",
+			detail ? detail : "data", offset, bytesRead, len );
+	}
+}
+
 // RAVEN BEGIN
 /*
 ================
@@ -1026,6 +1052,9 @@ void idRestoreGame::CreateObjects( void ) {
 	idTypeInfo *type;
 
 	ReadInt( num );
+	if ( num < 0 || num > MAX_SAVEGAME_OBJECTS ) {
+		Error( "idRestoreGame::CreateObjects: invalid object count %d at offset %d", num, file->Tell() );
+	}
 
 	// create all the objects
 	objects.SetNum( num + 1 );
@@ -1033,11 +1062,17 @@ void idRestoreGame::CreateObjects( void ) {
 
 	for( i = 1; i < objects.Num(); i++ ) {
 		ReadString( classname );
+		if ( classname.IsEmpty() ) {
+			Error( "idRestoreGame::CreateObjects: empty class name for object %d", i );
+		}
 		type = idClass::GetClass( classname );
 		if ( !type ) {
 			Error( "idRestoreGame::CreateObjects: Unknown class '%s'", classname.c_str() );
 		}
 		objects[ i ] = type->CreateInstance();
+		if ( objects[ i ] == NULL ) {
+			Error( "idRestoreGame::CreateObjects: failed to create class '%s'", classname.c_str() );
+		}
 	}
 }
 
@@ -1094,8 +1129,9 @@ void idRestoreGame::Error( const char *fmt, ... ) {
 	char	text[ 1024 ];
 
 	va_start( argptr, fmt );
-	vsprintf( text, fmt, argptr );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
 	va_end( argptr );
+	text[ sizeof( text ) - 1 ] = '\0';
 
 // RAVEN BEGIN
 	// FIXME: this crashes. It now leaks, but that's better than crashing.
@@ -1132,7 +1168,7 @@ idRestoreGame::Read
 ================
 */
 void idRestoreGame::Read( void *buffer, int len ) {
-	file->Read( buffer, len );
+	ReadChecked( buffer, len, "raw data" );
 }
 
 /*
@@ -1141,7 +1177,12 @@ idRestoreGame::ReadInt
 ================
 */
 void idRestoreGame::ReadInt( int &value ) {
-	file->ReadInt( value );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadInt( value );
+	if ( bytesRead != sizeof( value ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading int at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( value ) ) );
+	}
 }
 
 /*
@@ -1150,7 +1191,9 @@ idRestoreGame::ReadJoint
 ================
 */
 void idRestoreGame::ReadJoint( jointHandle_t &value ) {
-	file->ReadInt( ( int &)value );
+	int joint;
+	ReadInt( joint );
+	value = static_cast<jointHandle_t>( joint );
 }
 
 /*
@@ -1159,7 +1202,12 @@ idRestoreGame::ReadShort
 ================
 */
 void idRestoreGame::ReadShort( short &value ) {
-	file->ReadShort( value );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadShort( value );
+	if ( bytesRead != sizeof( value ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading short at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( value ) ) );
+	}
 }
 
 /*
@@ -1168,7 +1216,7 @@ idRestoreGame::ReadByte
 ================
 */
 void idRestoreGame::ReadByte( byte &value ) {
-	file->ReadUnsignedChar( value );
+	ReadChecked( &value, sizeof( value ), "byte" );
 }
 
 /*
@@ -1177,7 +1225,7 @@ idRestoreGame::ReadSignedChar
 ================
 */
 void idRestoreGame::ReadSignedChar( signed char &value ) {
-	file->ReadChar( ( char & )value );
+	ReadChecked( &value, sizeof( value ), "signed char" );
 }
 
 /*
@@ -1186,7 +1234,12 @@ idRestoreGame::ReadFloat
 ================
 */
 void idRestoreGame::ReadFloat( float &value ) {
-	file->ReadFloat( value );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadFloat( value );
+	if ( bytesRead != sizeof( value ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading float at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( value ) ) );
+	}
 }
 
 /*
@@ -1195,7 +1248,12 @@ idRestoreGame::ReadBool
 ================
 */
 void idRestoreGame::ReadBool( bool &value ) {
-	file->ReadBool( value );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadBool( value );
+	if ( bytesRead != sizeof( byte ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading bool at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( byte ) ) );
+	}
 }
 
 /*
@@ -1204,18 +1262,20 @@ idRestoreGame::ReadString
 ================
 */
 void idRestoreGame::ReadString( idStr &string ) {
-/*	int len;
+	int len;
 
 	ReadInt( len );
 // RAVEN BEGIN
 // jscott: added max check - should be big enough
-	if ( len < 0 || len > MAX_PRINT_MSG ) {
+	if ( len < 0 || len >= MAX_PRINT_MSG ) {
 		Error( "idRestoreGame::ReadString: invalid length (%d)", len );
 // RAVEN END
 	}
 
-	string.Fill( ' ', len );*/
-	file->ReadString( string );
+	string.Fill( ' ', len );
+	if ( len > 0 ) {
+		ReadChecked( &string[0], len, "string" );
+	}
 }
 
 /*
@@ -1224,7 +1284,12 @@ idRestoreGame::ReadVec2
 ================
 */
 void idRestoreGame::ReadVec2( idVec2 &vec ) {
-	file->ReadVec2( vec );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadVec2( vec );
+	if ( bytesRead != sizeof( vec ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading vec2 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( vec ) ) );
+	}
 }
 
 /*
@@ -1233,7 +1298,12 @@ idRestoreGame::ReadVec3
 ================
 */
 void idRestoreGame::ReadVec3( idVec3 &vec ) {
-	file->ReadVec3( vec );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadVec3( vec );
+	if ( bytesRead != sizeof( vec ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading vec3 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( vec ) ) );
+	}
 }
 
 /*
@@ -1242,7 +1312,12 @@ idRestoreGame::ReadVec4
 ================
 */
 void idRestoreGame::ReadVec4( idVec4 &vec ) {
-	file->ReadVec4( vec );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadVec4( vec );
+	if ( bytesRead != sizeof( vec ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading vec4 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( vec ) ) );
+	}
 }
 
 /*
@@ -1251,7 +1326,12 @@ idRestoreGame::ReadVec5
 ================
 */
 void idRestoreGame::ReadVec5( idVec5 &vec ) {
-	file->ReadVec5( vec );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadVec5( vec );
+	if ( bytesRead != sizeof( vec ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading vec5 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( vec ) ) );
+	}
 }
 
 /*
@@ -1260,7 +1340,12 @@ idRestoreGame::ReadVec6
 ================
 */
 void idRestoreGame::ReadVec6( idVec6 &vec ) {
-	file->ReadVec6( vec );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadVec6( vec );
+	if ( bytesRead != sizeof( vec ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading vec6 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( vec ) ) );
+	}
 }
 
 /*
@@ -1281,10 +1366,13 @@ idRestoreGame::ReadWinding
 void idRestoreGame::ReadWinding( idWinding &w )
 {
 	int i, num;
-	file->ReadInt( num );
+	ReadInt( num );
+	if ( num < 0 || num > MAX_POINTS_ON_WINDING ) {
+		Error( "idRestoreGame::ReadWinding: invalid point count %d at offset %d", num, file->Tell() );
+	}
 	w.SetNumPoints( num );
 	for ( i = 0; i < num; i++ ) {
-		file->ReadVec5( w[i] );
+		ReadVec5( w[i] );
 	}
 }
 
@@ -1294,7 +1382,12 @@ idRestoreGame::ReadMat3
 ================
 */
 void idRestoreGame::ReadMat3( idMat3 &mat ) {
-	file->ReadMat3( mat );
+	const int offset = file->Tell();
+	const int bytesRead = file->ReadMat3( mat );
+	if ( bytesRead != sizeof( mat ) ) {
+		Error( "idRestoreGame: unexpected end of savegame while reading mat3 at offset %d (read %d of %d)",
+			offset, bytesRead, static_cast<int>( sizeof( mat ) ) );
+	}
 }
 
 /*
@@ -1318,7 +1411,8 @@ void idRestoreGame::ReadObject( idClass *&obj ) {
 
 	ReadInt( index );
 	if ( ( index < 0 ) || ( index >= objects.Num() ) ) {
-		Error( "idRestoreGame::ReadObject: invalid object index" );
+		Error( "idRestoreGame::ReadObject: invalid object index %d (count %d, offset %d)",
+			index, objects.Num(), file->Tell() );
 	}
 	obj = objects[ index ];
 }
@@ -1357,15 +1451,24 @@ void idRestoreGame::ReadDict( idDict *dict ) {
 
 	ReadInt( num );
 
-	if ( num < 0 ) {
-		dict = NULL;
-	} else {
-		dict->Clear();
-		for( i = 0; i < num; i++ ) {
-			ReadString( key );
-			ReadString( value );
-			dict->Set( key, value );
+	if ( num == -1 ) {
+		if ( dict != NULL ) {
+			dict->Clear();
 		}
+		return;
+	}
+	if ( num < -1 || num > MAX_SAVEGAME_DICT_ENTRIES ) {
+		Error( "idRestoreGame::ReadDict: invalid key/value count %d at offset %d", num, file->Tell() );
+	}
+	if ( dict == NULL ) {
+		Error( "idRestoreGame::ReadDict: NULL dictionary for %d key/value pairs", num );
+	}
+
+	dict->Clear();
+	for( i = 0; i < num; i++ ) {
+		ReadString( key );
+		ReadString( value );
+		dict->Set( key, value );
 	}
 }
 
