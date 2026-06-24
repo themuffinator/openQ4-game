@@ -1434,6 +1434,33 @@ float HeightForTrajectory( const idVec3 &start, float zVel, float gravity ) {
 	return maxHeight;
 }
 
+static bool TestTrajectorySegment( trace_t &trace, const idVec3 &start, const idVec3 &end, const idClipModel *clip, int clipmask, const idEntity *ignore, const idEntity *targetEntity ) {
+	const float maxSegmentLength = CM_MAX_TRACE_DIST - 1.0f;
+	const idVec3 delta = end - start;
+	const float lengthSqr = delta.LengthSqr();
+
+	// Swept clip-model translations are capped; split long aim probes before tracing them.
+	if ( clip == NULL || lengthSqr <= Square( maxSegmentLength ) ) {
+		gameLocal.Translation( NULL, trace, start, end, clip, mat3_identity, clipmask, ignore );
+		return ( trace.fraction >= 1.0f || gameLocal.GetTraceEntity( trace ) == targetEntity );
+	}
+
+	const float length = idMath::Sqrt( lengthSqr );
+	const int numSegments = idMath::Ftoi( idMath::Ceil( length / maxSegmentLength ) );
+	idVec3 segmentStart = start;
+
+	for ( int i = 1; i <= numSegments; i++ ) {
+		const idVec3 segmentEnd = start + delta * ( (float)i / (float)numSegments );
+		gameLocal.Translation( NULL, trace, segmentStart, segmentEnd, clip, mat3_identity, clipmask, ignore );
+		if ( trace.fraction < 1.0f ) {
+			return ( gameLocal.GetTraceEntity( trace ) == targetEntity );
+		}
+		segmentStart = segmentEnd;
+	}
+
+	return true;
+}
+
 /*
 =====================
 idAI::TestTrajectory
@@ -1496,16 +1523,8 @@ bool idAI::TestTrajectory( const idVec3 &start, const idVec3 &end, float zVel, f
 
 	result = true;
 	for ( i = 0; i < numSegments; i++ ) {
-// RAVEN BEGIN
-// ddynerman: multiple clip worlds
-		gameLocal.Translation( NULL, trace, points[i], points[i+1], clip, mat3_identity, clipmask, ignore );
-// RAVEN END
-		if ( trace.fraction < 1.0f ) {
-			if ( gameLocal.GetTraceEntity( trace ) == targetEntity ) {
-				result = true;
-			} else {
-				result = false;
-			}
+		result = TestTrajectorySegment( trace, points[i], points[i+1], clip, clipmask, ignore, targetEntity );
+		if ( !result || trace.fraction < 1.0f ) {
 			break;
 		}
 	}
@@ -1555,10 +1574,7 @@ bool idAI::PredictTrajectory( const idVec3 &firePos, const idVec3 &target, float
 		aimDir = target - firePos;
 		aimDir.Normalize();
 
-// RAVEN BEGIN
-// ddynerman: multiple clip worlds
-		gameLocal.Translation( NULL, trace, firePos, target, clip, mat3_identity, clipmask, ignore );
-// RAVEN END
+		const bool result = TestTrajectorySegment( trace, firePos, target, clip, clipmask, ignore, targetEntity );
 
 		if ( drawtime ) {
 			gameRenderWorld->DebugLine( colorRed, firePos, target, drawtime );
@@ -1567,7 +1583,7 @@ bool idAI::PredictTrajectory( const idVec3 &firePos, const idVec3 &target, float
 			gameRenderWorld->DebugBounds( ( trace.fraction >= 1.0f || ( gameLocal.GetTraceEntity( trace ) == targetEntity ) ) ? colorGreen : colorYellow, bnds, vec3_zero, drawtime );
 		}
 
-		return ( trace.fraction >= 1.0f || ( gameLocal.GetTraceEntity( trace ) == targetEntity ) );
+		return result;
 	}
 
 	n = Ballistics( firePos, target, projectileSpeed, projGravity[2], ballistics );
