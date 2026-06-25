@@ -30,6 +30,17 @@
 
 idCVar net_predictionErrorDecay( "net_predictionErrorDecay", "112", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "time in milliseconds it takes to fade away prediction errors", 0.0f, 200.0f );
 idCVar net_showPredictionError( "net_showPredictionError", "-1", CVAR_INTEGER | CVAR_GAME | CVAR_NOCHEAT, "show prediction errors for the given client", -1, MAX_CLIENTS );
+idCVar cl_player_outline_enemy( "cl_player_outline_enemy", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "enemy player outline strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_outline_team( "cl_player_outline_team", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "teammate player outline strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_outline_width( "cl_player_outline_width", "2.0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "multiplayer player outline width in screen pixels", 0.5f, 6.0f );
+idCVar cl_player_rimlight_enemy( "cl_player_rimlight_enemy", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "enemy player rimlight strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_rimlight_team( "cl_player_rimlight_team", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "teammate player rimlight strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_visibility_enemy_color( "cl_player_visibility_enemy_color", "1 0.12 0.05", CVAR_GAME | CVAR_ARCHIVE, "enemy player outline and rimlight color as RGB floats" );
+idCVar cl_player_visibility_team_color( "cl_player_visibility_team_color", "0.1 0.85 0.25", CVAR_GAME | CVAR_ARCHIVE, "teammate player outline and rimlight color as RGB floats" );
+idCVar cl_player_brightskin_enemy( "cl_player_brightskin_enemy", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "enemy player brightskin strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_brightskin_team( "cl_player_brightskin_team", "0", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, "teammate player brightskin strength in multiplayer", 0.0f, 1.0f );
+idCVar cl_player_brightskin_enemy_color( "cl_player_brightskin_enemy_color", "1 0.05 0.02", CVAR_GAME | CVAR_ARCHIVE, "enemy player brightskin color as RGB floats" );
+idCVar cl_player_brightskin_team_color( "cl_player_brightskin_team_color", "0.05 1 0.22", CVAR_GAME | CVAR_ARCHIVE, "teammate player brightskin color as RGB floats" );
 
 
 /*
@@ -104,6 +115,93 @@ static bool Player_UseCorpseSink( void ) {
 
 static bool Player_UseCorpseSinkNoRagdoll( void ) {
 	return Player_GetCorpseSinkMode() >= 2;
+}
+
+static float Player_ClampedVisibilityCVar( const idCVar &cvar ) {
+	return idMath::ClampFloat( 0.0f, 1.0f, cvar.GetFloat() );
+}
+
+static bool Player_ParseVisibilityColor( const char *text, idVec3 &color ) {
+	if ( text == NULL || text[0] == '\0' ) {
+		return false;
+	}
+
+	float values[3];
+	const char *scan = text;
+	for ( int i = 0; i < 3; i++ ) {
+		while ( *scan == ' ' || *scan == '\t' || *scan == ',' ) {
+			scan++;
+		}
+		if ( *scan == '\0' ) {
+			return false;
+		}
+
+		char *end = NULL;
+		values[i] = static_cast<float>( strtod( scan, &end ) );
+		if ( end == scan ) {
+			return false;
+		}
+		scan = end;
+	}
+
+	color.Set(
+		idMath::ClampFloat( 0.0f, 1.0f, values[0] ),
+		idMath::ClampFloat( 0.0f, 1.0f, values[1] ),
+		idMath::ClampFloat( 0.0f, 1.0f, values[2] ) );
+	return true;
+}
+
+static idVec4 Player_VisibilityColor( const bool teammate, const float alpha ) {
+	idVec3 color;
+	color.Set( teammate ? 0.1f : 1.0f, teammate ? 0.85f : 0.12f, teammate ? 0.25f : 0.05f );
+	Player_ParseVisibilityColor( teammate ? cl_player_visibility_team_color.GetString() : cl_player_visibility_enemy_color.GetString(), color );
+
+	idVec4 result;
+	result.Set( color.x, color.y, color.z, idMath::ClampFloat( 0.0f, 1.0f, alpha ) );
+	return result;
+}
+
+static idVec4 Player_BrightSkinColor( const bool teammate, const float alpha ) {
+	idVec3 color;
+	color.Set( teammate ? 0.05f : 1.0f, teammate ? 1.0f : 0.05f, teammate ? 0.22f : 0.02f );
+	Player_ParseVisibilityColor( teammate ? cl_player_brightskin_team_color.GetString() : cl_player_brightskin_enemy_color.GetString(), color );
+
+	idVec4 result;
+	result.Set( color.x, color.y, color.z, idMath::ClampFloat( 0.0f, 1.0f, alpha ) );
+	return result;
+}
+
+static const char *Player_ForcedModelCVarString( const idCVar &cvar ) {
+	const char *model = cvar.GetString();
+	if ( model == NULL || model[0] == '\0' || idStr::Icmp( model, "_disabled" ) == 0 ) {
+		return "";
+	}
+
+	return model;
+}
+
+static void Player_ClearVisibilityEffects( renderEntity_t *renderEnt ) {
+	if ( renderEnt == NULL ) {
+		return;
+	}
+
+	renderEnt->outlineColor.Zero();
+	renderEnt->rimlightColor.Zero();
+	renderEnt->brightSkinColor.Zero();
+	renderEnt->outlineWidth = 0.0f;
+	renderEnt->outlineFlags = 0;
+}
+
+static void Player_SetVisibilityEffects( renderEntity_t *renderEnt, const idVec4 &outlineColor, const float outlineWidth, const int outlineFlags, const idVec4 &rimlightColor, const idVec4 &brightSkinColor ) {
+	if ( renderEnt == NULL ) {
+		return;
+	}
+
+	renderEnt->outlineColor = outlineColor;
+	renderEnt->rimlightColor = rimlightColor;
+	renderEnt->brightSkinColor = brightSkinColor;
+	renderEnt->outlineWidth = outlineWidth;
+	renderEnt->outlineFlags = outlineFlags;
 }
 
 //const idEventDef EV_Player_HideDatabaseEntry ( "<hidedatabaseentry>", NULL );
@@ -1190,6 +1288,9 @@ idPlayer::idPlayer() {
 	spectator				= 0;
 	forcedReady				= false;
 	wantSpectate			= false;
+	initialJoinPending		= false;
+	initialJoinSpectateApplied = false;
+	initialJoinMenuPending	= false;
 
 	minRespawnTime			= 0;
 	maxRespawnTime			= 0;
@@ -1961,6 +2062,28 @@ void idPlayer::Spawn( void ) {
 		// always start in spectating state waiting to be spawned in
 		// do this before SetClipModel to get the right bounding box
 		spectating = true;
+		initialJoinPending = !gameLocal.isClient && !IsFakeClient();
+		initialJoinSpectateApplied = false;
+		initialJoinMenuPending = IsLocalClient() && !cvarSystem->GetCVarBool( "ui_autoJoin" );
+		if ( initialJoinPending ) {
+			idDict *userInfo = GetUserInfo();
+			const bool autoJoin = userInfo->GetBool( "ui_autoJoin", "0" );
+			userInfo->SetBool( "ui_joined", autoJoin );
+			if ( autoJoin ) {
+				userInfo->Set( "ui_spectate", "Play" );
+			} else {
+				userInfo->Set( "ui_spectate", "Spectate" );
+				wantSpectate = true;
+			}
+		}
+		if ( initialJoinMenuPending ) {
+			cvarSystem->SetCVarBool( "ui_joined", false );
+			cvarSystem->SetCVarString( "ui_spectate", "Spectate" );
+		}
+	} else {
+		initialJoinPending = false;
+		initialJoinSpectateApplied = false;
+		initialJoinMenuPending = false;
 	}
 
 	// set our collision model
@@ -2091,6 +2214,9 @@ void idPlayer::Spawn( void ) {
 			SpawnFromSpawnSpot( );
 			spectator = entityNumber;
 			forceRespawn = true;
+			if ( wantSpectate ) {
+				SetSpectateOrigin();
+			}
 			assert( spectating );
 		}
 	} else {
@@ -2833,6 +2959,9 @@ void idPlayer::Restart( void ) {
 		// choose a random spot and prepare the point of view in case player is left spectating
 		assert( spectating );
 		SpawnFromSpawnSpot();
+		if ( wantSpectate ) {
+			SetSpectateOrigin();
+		}
 	}
 
 	lastKiller = NULL;
@@ -3197,10 +3326,10 @@ void idPlayer::UpdateModelSetup( bool forceReload ) {
 	if( gameLocal.IsTeamGame() ) {
 		defaultModel = spawnArgs.GetString( va( "def_default_model_%s", idMultiplayerGame::teamNames[ team ] ), NULL );
 
-		if( g_forceMarineModel.GetString()[ 0 ] && team == TEAM_MARINE ) {
-			newModelName = g_forceMarineModel.GetString();
-		} else if( g_forceStroggModel.GetString()[ 0 ] && team == TEAM_STROGG ) {
-			newModelName = g_forceStroggModel.GetString();
+		if( Player_ForcedModelCVarString( g_forceMarineModel )[ 0 ] && team == TEAM_MARINE ) {
+			newModelName = Player_ForcedModelCVarString( g_forceMarineModel );
+		} else if( Player_ForcedModelCVarString( g_forceStroggModel )[ 0 ] && team == TEAM_STROGG ) {
+			newModelName = Player_ForcedModelCVarString( g_forceStroggModel );
 		} else {
 			uiKeyName = va( "ui_model_%s", idMultiplayerGame::teamNames[ team ] );
 			newModelName = GetUserInfo() ? GetUserInfo()->GetString( uiKeyName ) : "";
@@ -3208,8 +3337,8 @@ void idPlayer::UpdateModelSetup( bool forceReload ) {
 	} else {
 		defaultModel = spawnArgs.GetString( "def_default_model" );
 
-		if( g_forceModel.GetString()[ 0 ] ) {
-			newModelName = g_forceModel.GetString();
+		if( Player_ForcedModelCVarString( g_forceModel )[ 0 ] ) {
+			newModelName = Player_ForcedModelCVarString( g_forceModel );
 		} else {
 			uiKeyName = "ui_model";
 			newModelName = GetUserInfo() ? GetUserInfo()->GetString( uiKeyName ) : "";
@@ -3401,6 +3530,7 @@ bool idPlayer::UserInfoChanged( void ) {
  	bool	modifiedInfo;
  	bool	spec;
  	bool	newready;
+	bool	initialJoinSpectate;
 
 	if ( IsFakeClient() ) {
 		showWeaponViewModel = cvarSystem->GetCVarBool( "ui_showGun" );
@@ -3418,6 +3548,7 @@ bool idPlayer::UserInfoChanged( void ) {
 	}
 
  	modifiedInfo = false;
+	initialJoinSpectate = false;
 
 	// update/apply handicap
 	handicap = userInfo->GetInt( "ui_handicap", "100" ) / 100.0f;
@@ -3433,8 +3564,52 @@ bool idPlayer::UserInfoChanged( void ) {
 		inventory.maxarmor = spawnArgs.GetInt( "maxarmor", "100" );
 	}
 
- 	spec = ( idStr::Icmp( userInfo->GetString( "ui_spectate" ), "Spectate" ) == 0 );
-	if ( gameLocal.serverInfo.GetBool( "si_spectators" ) ) {
+	spec = ( idStr::Icmp( userInfo->GetString( "ui_spectate" ), "Spectate" ) == 0 );
+	if ( !gameLocal.isClient && initialJoinPending ) {
+		if ( userInfo->GetBool( "ui_autoJoin", "0" ) ) {
+			initialJoinPending = false;
+			initialJoinSpectateApplied = true;
+			initialJoinMenuPending = false;
+			if ( !userInfo->GetBool( "ui_joined", "0" ) ) {
+				userInfo->SetBool( "ui_joined", true );
+				modifiedInfo |= true;
+			}
+			if ( IsLocalClient() ) {
+				cvarSystem->SetCVarBool( "ui_joined", true );
+			}
+			if ( spec ) {
+				userInfo->Set( "ui_spectate", "Play" );
+				if ( IsLocalClient() ) {
+					cvarSystem->SetCVarString( "ui_spectate", "Play" );
+				}
+				modifiedInfo |= true;
+				spec = false;
+				if ( spectating ) {
+					forceRespawn = true;
+				}
+			}
+		} else if ( !userInfo->GetBool( "ui_joined", "0" ) ) {
+			initialJoinSpectateApplied = true;
+			initialJoinSpectate = true;
+			if ( !spec ) {
+				userInfo->Set( "ui_spectate", "Spectate" );
+				if ( IsLocalClient() ) {
+					cvarSystem->SetCVarString( "ui_spectate", "Spectate" );
+				}
+				modifiedInfo |= true;
+				spec = true;
+			}
+		} else {
+			initialJoinPending = false;
+		}
+	}
+
+	if ( initialJoinSpectate ) {
+		wantSpectate = true;
+		if ( spectating ) {
+			SetSpectateOrigin();
+		}
+	} else if ( gameLocal.serverInfo.GetBool( "si_spectators" ) ) {
  		// never let spectators go back to game while sudden death is on
  		if ( gameLocal.mpGame.GetGameState()->GetMPGameState() == SUDDENDEATH && !spec && wantSpectate == true ) {
  			userInfo->Set( "ui_spectate", "Spectate" );
@@ -3872,8 +4047,82 @@ void idPlayer::DrawShadow( renderEntity_t *headRenderEnt ) {
 		renderEntity.suppressShadowInViewID	= entityNumber+1;
  		if ( headRenderEnt ) {
  			headRenderEnt->suppressShadowInViewID = entityNumber+1;
-   		}
+		}
 	}
+}
+
+/*
+================
+idPlayer::UpdateMultiplayerVisibilityEffects
+================
+*/
+void idPlayer::UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt ) {
+	renderEntity_t *weaponRenderEnt = NULL;
+	if ( weaponWorldModel ) {
+		weaponRenderEnt = weaponWorldModel->GetRenderEntity();
+	}
+
+	Player_ClearVisibilityEffects( &renderEntity );
+	Player_ClearVisibilityEffects( headRenderEnt );
+	Player_ClearVisibilityEffects( weaponRenderEnt );
+
+	if ( !gameLocal.isMultiplayer || IsHidden() || fl.hidden || spectating || health <= 0 ) {
+		return;
+	}
+
+	idPlayer *viewer = gameLocal.GetLocalPlayer();
+	if ( viewer == NULL ) {
+		const int demoFollowClient = gameLocal.GetDemoFollowClient();
+		if ( demoFollowClient >= 0 ) {
+			viewer = gameLocal.GetClientByNum( demoFollowClient );
+		}
+	}
+	if ( viewer == NULL ) {
+		return;
+	}
+
+	if ( viewer->spectating && viewer->spectator >= 0 ) {
+		idPlayer *spectatedPlayer = gameLocal.GetClientByNum( viewer->spectator );
+		if ( spectatedPlayer != NULL ) {
+			viewer = spectatedPlayer;
+		}
+	}
+
+	if ( viewer == this || viewer->spectating || viewer->health <= 0 || viewer->GetInstance() != instance ) {
+		return;
+	}
+
+	const bool teammate = gameLocal.IsTeamGame() && viewer->team == team;
+	const float outlineStrength = Player_ClampedVisibilityCVar( teammate ? cl_player_outline_team : cl_player_outline_enemy );
+	const float rimlightStrength = Player_ClampedVisibilityCVar( teammate ? cl_player_rimlight_team : cl_player_rimlight_enemy );
+	const float brightSkinStrength = Player_ClampedVisibilityCVar( teammate ? cl_player_brightskin_team : cl_player_brightskin_enemy );
+	if ( outlineStrength <= 0.0f && rimlightStrength <= 0.0f && brightSkinStrength <= 0.0f ) {
+		return;
+	}
+
+	idVec4 outlineColor;
+	idVec4 rimlightColor;
+	idVec4 brightSkinColor;
+	outlineColor.Zero();
+	rimlightColor.Zero();
+	brightSkinColor.Zero();
+
+	if ( outlineStrength > 0.0f ) {
+		outlineColor = Player_VisibilityColor( teammate, outlineStrength );
+	}
+	if ( rimlightStrength > 0.0f ) {
+		rimlightColor = Player_VisibilityColor( teammate, rimlightStrength );
+	}
+	if ( brightSkinStrength > 0.0f ) {
+		brightSkinColor = Player_BrightSkinColor( teammate, brightSkinStrength );
+	}
+
+	const int outlineFlags = teammate ? REF_OUTLINE_NODEPTH : 0;
+	const float outlineWidth = idMath::ClampFloat( 0.5f, 6.0f, cl_player_outline_width.GetFloat() );
+
+	Player_SetVisibilityEffects( &renderEntity, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
+	Player_SetVisibilityEffects( headRenderEnt, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
+	Player_SetVisibilityEffects( weaponRenderEnt, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
 }
 
 /*
@@ -9429,6 +9678,13 @@ void idPlayer::UpdateHud( void ) {
 		return;
 	}
 
+	if ( gameLocal.isMultiplayer && initialJoinMenuPending ) {
+		initialJoinMenuPending = false;
+		if ( !cvarSystem->GetCVarBool( "ui_autoJoin" ) ) {
+			gameLocal.mpGame.ShowInitialJoinMenu();
+		}
+	}
+
 	// FIXME: this is here for level ammo balancing to see pct of hits 
 	hud->SetStateInt( "g_showProjectilePct", g_showProjectilePct.GetInteger() );
 	if ( numProjectilesFired ) {
@@ -9731,6 +9987,7 @@ void idPlayer::Think( void ) {
 		
 		if ( !fl.hidden ) {
 			UpdateAnimation();
+			UpdateMultiplayerVisibilityEffects( NULL );
 			Present();
 			LinkCombat();
 		} else {
@@ -9913,6 +10170,7 @@ void idPlayer::Think( void ) {
 
  	if ( !g_stopTime.GetBool() ) {
 		UpdateAnimation();
+		UpdateMultiplayerVisibilityEffects( headRenderEnt );
 
 		Present();
 
@@ -12107,6 +12365,7 @@ void idPlayer::LocalClientPredictionThink( void ) {
 
 		if ( !fl.hidden ) {
 			UpdateAnimation();
+			UpdateMultiplayerVisibilityEffects( NULL );
 			Present();
 		}			
 		
@@ -12228,6 +12487,7 @@ void idPlayer::LocalClientPredictionThink( void ) {
  		UpdateAnimation();
  	}
 
+	UpdateMultiplayerVisibilityEffects( headRenderEnt );
 	Present();
 
  	LinkCombat();
@@ -12298,6 +12558,7 @@ void idPlayer::NonLocalClientPredictionThink( void ) {
 
 		if ( !fl.hidden ) {
 			UpdateAnimation();
+			UpdateMultiplayerVisibilityEffects( NULL );
 			Present();
 		}			
 		
@@ -12405,6 +12666,7 @@ void idPlayer::NonLocalClientPredictionThink( void ) {
  		UpdateAnimation();
  	}
 
+	UpdateMultiplayerVisibilityEffects( headRenderEnt );
 	Present();
 
  	LinkCombat();
@@ -13179,6 +13441,36 @@ idPlayer::SetSpectateOrigin
 */
 void idPlayer::SetSpectateOrigin( void ) {
 	idVec3 neworig;
+	idAngles newangles;
+	idEntity *spot;
+
+	spot = gameLocal.FindEntityUsingDef( NULL, "info_player_intermission" );
+	if ( spot == NULL && gameLocal.isMultiplayer ) {
+		spot = gameLocal.SelectSpawnPoint( this );
+	}
+
+	if ( spot != NULL ) {
+		neworig = spot->GetPhysics()->GetOrigin();
+		newangles = spot->GetPhysics()->GetAxis().ToAngles();
+
+		const char *targetName = spot->spawnArgs.GetString( "target" );
+		idEntity *target = ( targetName != NULL && targetName[ 0 ] != '\0' ) ? gameLocal.FindEntity( targetName ) : NULL;
+		if ( target != NULL ) {
+			idVec3 dir = target->GetPhysics()->GetOrigin() - neworig;
+			if ( dir.LengthSqr() > 1.0f ) {
+				newangles = dir.ToAngles();
+			}
+		}
+
+		if ( idStr::Icmp( spot->GetEntityDefName(), "info_player_intermission" ) != 0 ) {
+			neworig[ 2 ] += EyeHeight();
+			neworig[ 2 ] += 25;
+		}
+
+		SetOrigin( neworig );
+		SetViewAngles( newangles );
+		return;
+	}
 
 	neworig = GetPhysics()->GetOrigin();
 	neworig[ 2 ] += EyeHeight();

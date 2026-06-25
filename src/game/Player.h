@@ -54,7 +54,7 @@ const int	DEATH_VOLUME				= 15;			// volume at death
 
 const int	SAVING_THROW_TIME			= 5000;			// maximum one "saving throw" every five seconds
 
-const int	ASYNC_PLAYER_INV_AMMO_BITS = idMath::BitsForInteger( 999 );	// 9 bits to cover the range [0, 999]
+const int	ASYNC_PLAYER_INV_AMMO_BITS = idMath::BitsForInteger( 999 );	// 10 bits to cover the range [0, 999]
 const int	ASYNC_PLAYER_INV_CLIP_BITS = -7;							// -7 bits to cover the range [-1, 60]
 const int	ASYNC_PLAYER_INV_WPMOD_BITS = 3;							// 3 bits (max of 3 mods per gun)
 // NOTE: protocol 69 used 6 bits, but that's only used for client -> server traffic, so doesn't affect backwards protocol replay compat
@@ -380,6 +380,9 @@ public:
 	int						lastArenaChange;
 	
 	bool					wantSpectate;			// from userInfo
+	bool					initialJoinPending;		// waiting at the connect-time join screen
+	bool					initialJoinSpectateApplied;
+	bool					initialJoinMenuPending;
 	bool					jumpDuringHitch;
 
  	bool					weaponGone;				// force stop firing
@@ -510,6 +513,7 @@ public:
 	void					CalculateFirstPersonView( void );
 	
 	void					DrawShadow( renderEntity_t *headRenderEnt );
+	void					UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt );
 	void					DrawHUD( idUserInterface *hud );
 	void					StartRadioChatter ( void );
 	void					StopRadioChatter ( void );

@@ -3067,15 +3067,12 @@ void idGameLocal::SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity 
 		if ( matchInstance >= 0 && entities[ icl ]->GetInstance() != matchInstance ) {
 			continue;
 		}
-		if ( clientsPVS[ icl ].i < 0 ) {
-			// clients for which we don't have PVS info won't get anything
-			continue;
-		}
+		const bool clientHasPVS = clientsPVS[ icl ].i >= 0;
 		player = static_cast< idPlayer * >( entities[ icl ] );
 
 		// if no areas are given, this is a global emit
-		if ( numEvAreas ) {
-			// ony send if pvs says this client can see it
+		if ( numEvAreas && clientHasPVS ) {
+			// only send if pvs says this client can see it
 			if ( !pvs.InCurrentPVS( clientsPVS[ icl ], areas, numEvAreas ) ) {
 				continue;
 			}

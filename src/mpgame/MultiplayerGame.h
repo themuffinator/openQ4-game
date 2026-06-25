@@ -339,6 +339,7 @@ public:
 // RAVEN END
 
 	idUserInterface*	StartMenu( void );
+	void			ShowInitialJoinMenu( void );
 
 	const char*		HandleGuiCommands( const char *menuCommand );
 

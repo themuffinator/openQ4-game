@@ -373,6 +373,9 @@ public:
 	int						lastArenaChange;
 	
 	bool					wantSpectate;			// from userInfo
+	bool					initialJoinPending;		// waiting at the connect-time join screen
+	bool					initialJoinSpectateApplied;
+	bool					initialJoinMenuPending;
 
  	bool					weaponGone;				// force stop firing
  	bool					useInitialSpawns;		// toggled by a map restart to be active for the first game spawn
@@ -489,6 +492,7 @@ public:
 	void					CalculateFirstPersonView( void );
 	
 	void					DrawShadow( renderEntity_t *headRenderEnt );
+	void					UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt );
 	void					DrawHUD( idUserInterface *hud );
 	void					DrawInput();
 

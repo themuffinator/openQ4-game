@@ -1038,7 +1038,9 @@ void rvWeapon::Think ( void ) {
 		// set the physics position and orientation
 		viewModel->GetPhysics()->SetOrigin( viewModelOrigin );
 		viewModel->GetPhysics()->SetAxis( viewModelAxis );
- 		viewModel->UpdateVisuals();
+		if ( !gameLocal.isClient || gameLocal.isLastPredictFrame || owner->entityNumber != gameLocal.localClientNum ) {
+ 			viewModel->UpdateVisuals();
+		}
 	} else {
 		common->Warning( "NULL viewmodel %s\n", __FUNCTION__ );
 	}
@@ -1052,7 +1054,9 @@ void rvWeapon::Think ( void ) {
 	}
 
 	if ( viewModel ) {
-		viewModel->UpdateAnimation( );
+		if ( !gameLocal.isClient || gameLocal.isLastPredictFrame || owner->entityNumber != gameLocal.localClientNum ) {
+			viewModel->UpdateAnimation( );
+		}
 	}
 
 	// Clear reload and flashlight flags

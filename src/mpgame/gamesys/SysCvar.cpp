@@ -142,6 +142,8 @@ idCVar ui_autoReload(				"ui_autoReload",			"1",			CVAR_GAME | CVAR_USERINFO | C
 idCVar ui_showGun(					"ui_showGun",				"1",			CVAR_GAME | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "show gun" );
 idCVar ui_ready(					"ui_ready",				si_readyArgs[ 0 ],	CVAR_GAME | CVAR_USERINFO, "player is ready to start playing", idCmdSystem::ArgCompletion_String<si_readyArgs> );
 idCVar ui_spectate(					"ui_spectate",		si_spectateArgs[ 0 ],	CVAR_GAME | CVAR_USERINFO, "play or spectate", idCmdSystem::ArgCompletion_String<si_spectateArgs> );
+idCVar ui_autoJoin(					"ui_autoJoin",				"0",			CVAR_GAME | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "automatically join multiplayer servers instead of opening the initial join screen" );
+idCVar ui_joined(					"ui_joined",				"0",			CVAR_GAME | CVAR_USERINFO | CVAR_BOOL, "internal multiplayer initial join choice state" );
 idCVar ui_chat(						"ui_chat",					"0",			CVAR_GAME | CVAR_USERINFO | CVAR_BOOL | CVAR_ROM | CVAR_CHEAT, "player is chatting" );
 idCVar ui_handicap(					"ui_handicap",				"100",			CVAR_GAME | CVAR_USERINFO | CVAR_INTEGER | CVAR_ARCHIVE, "player damage output handicap" );
 

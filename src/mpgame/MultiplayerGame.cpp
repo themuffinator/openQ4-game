@@ -177,6 +177,155 @@ static idStr GetMPMenuModelCVar( const int menuModelTeam ) {
 }
 
 enum {
+	MP_MENU_APPEARANCE_SELF = 0,
+	MP_MENU_APPEARANCE_ENEMY = 1,
+	MP_MENU_APPEARANCE_TEAM = 2
+};
+
+enum {
+	MP_MENU_MODEL_SLOT_SELF_DM = 0,
+	MP_MENU_MODEL_SLOT_SELF_MARINE = 1,
+	MP_MENU_MODEL_SLOT_SELF_STROGG = 2,
+	MP_MENU_MODEL_SLOT_FORCE_DM = 3,
+	MP_MENU_MODEL_SLOT_FORCE_MARINE = 4,
+	MP_MENU_MODEL_SLOT_FORCE_STROGG = 5
+};
+
+static int GetMPMenuAppearanceTab( idUserInterface *gui ) {
+	if ( gui == NULL ) {
+		return MP_MENU_APPEARANCE_SELF;
+	}
+
+	return idMath::ClampInt( MP_MENU_APPEARANCE_SELF, MP_MENU_APPEARANCE_TEAM, gui->GetStateInt( "appearance_tab" ) );
+}
+
+static int GetOpposingMPMenuTeam( const int team ) {
+	return team == TEAM_STROGG ? TEAM_MARINE : TEAM_STROGG;
+}
+
+static int ResolveMPMenuAppearanceTeam( const int tab, const bool isTeamGame, const int selfTeam ) {
+	if ( !isTeamGame ) {
+		return -1;
+	}
+
+	const int resolvedSelfTeam = ( selfTeam >= 0 && selfTeam < TEAM_MAX ) ? selfTeam : TEAM_MARINE;
+	return tab == MP_MENU_APPEARANCE_ENEMY ? GetOpposingMPMenuTeam( resolvedSelfTeam ) : resolvedSelfTeam;
+}
+
+static idStr GetMPMenuForceModelCVar( const int modelTeam ) {
+	if ( modelTeam == TEAM_MARINE ) {
+		return "g_forceMarineModel";
+	}
+	if ( modelTeam == TEAM_STROGG ) {
+		return "g_forceStroggModel";
+	}
+	return "g_forceModel";
+}
+
+static bool MPMenuAppearanceForcesModel( const int tab ) {
+	return tab == MP_MENU_APPEARANCE_ENEMY || tab == MP_MENU_APPEARANCE_TEAM;
+}
+
+static idStr GetMPMenuAppearanceModelCVar( const int tab, const int modelTeam ) {
+	if ( MPMenuAppearanceForcesModel( tab ) ) {
+		return GetMPMenuForceModelCVar( modelTeam );
+	}
+	return GetMPMenuModelCVar( modelTeam );
+}
+
+static int GetMPMenuAppearanceModelSlot( const int tab, const bool isTeamGame, const int modelTeam ) {
+	if ( MPMenuAppearanceForcesModel( tab ) ) {
+		if ( isTeamGame && modelTeam == TEAM_MARINE ) {
+			return MP_MENU_MODEL_SLOT_FORCE_MARINE;
+		}
+		if ( isTeamGame && modelTeam == TEAM_STROGG ) {
+			return MP_MENU_MODEL_SLOT_FORCE_STROGG;
+		}
+		return MP_MENU_MODEL_SLOT_FORCE_DM;
+	}
+
+	if ( isTeamGame && modelTeam == TEAM_MARINE ) {
+		return MP_MENU_MODEL_SLOT_SELF_MARINE;
+	}
+	if ( isTeamGame && modelTeam == TEAM_STROGG ) {
+		return MP_MENU_MODEL_SLOT_SELF_STROGG;
+	}
+	return MP_MENU_MODEL_SLOT_SELF_DM;
+}
+
+static bool MPMenuModelSelectionDisabled( const idStr &declName ) {
+	return !declName.Length() || idStr::Icmp( declName.c_str(), "_disabled" ) == 0;
+}
+
+static bool ParseMPMenuColor( const char *text, idVec3 &color ) {
+	if ( text == NULL || text[0] == '\0' ) {
+		return false;
+	}
+
+	float values[3];
+	const char *scan = text;
+	for ( int i = 0; i < 3; i++ ) {
+		while ( *scan == ' ' || *scan == '\t' || *scan == ',' ) {
+			scan++;
+		}
+		if ( *scan == '\0' ) {
+			return false;
+		}
+
+		char *end = NULL;
+		values[i] = static_cast<float>( strtod( scan, &end ) );
+		if ( end == scan ) {
+			return false;
+		}
+		scan = end;
+	}
+
+	color.Set(
+		idMath::ClampFloat( 0.0f, 1.0f, values[0] ),
+		idMath::ClampFloat( 0.0f, 1.0f, values[1] ),
+		idMath::ClampFloat( 0.0f, 1.0f, values[2] ) );
+	return true;
+}
+
+static idVec4 MPMenuCVarColor( const char *cvarName, const idVec3 &fallback, const float alpha ) {
+	idVec3 color = fallback;
+	ParseMPMenuColor( cvarSystem->GetCVarString( cvarName ), color );
+
+	return idVec4( color.x, color.y, color.z, idMath::ClampFloat( 0.0f, 1.0f, alpha ) );
+}
+
+static void ApplyMPMenuAppearancePreviewEffects( idUserInterface *gui, const int tab, const bool isTeamGame ) {
+	if ( gui == NULL ) {
+		return;
+	}
+
+	idVec4 outline;
+	idVec4 rimlight;
+	idVec4 brightSkin;
+	outline.Zero();
+	rimlight.Zero();
+	brightSkin.Zero();
+
+	if ( tab == MP_MENU_APPEARANCE_ENEMY || ( tab == MP_MENU_APPEARANCE_TEAM && isTeamGame ) ) {
+		const bool teammate = tab == MP_MENU_APPEARANCE_TEAM;
+		const float outlineStrength = idMath::ClampFloat( 0.0f, 1.0f, cvarSystem->GetCVarFloat( teammate ? "cl_player_outline_team" : "cl_player_outline_enemy" ) );
+		const float rimlightStrength = idMath::ClampFloat( 0.0f, 1.0f, cvarSystem->GetCVarFloat( teammate ? "cl_player_rimlight_team" : "cl_player_rimlight_enemy" ) );
+		const float brightSkinStrength = idMath::ClampFloat( 0.0f, 1.0f, cvarSystem->GetCVarFloat( teammate ? "cl_player_brightskin_team" : "cl_player_brightskin_enemy" ) );
+		const idVec3 visibilityFallback( teammate ? 0.1f : 1.0f, teammate ? 0.85f : 0.12f, teammate ? 0.25f : 0.05f );
+		const idVec3 brightFallback( teammate ? 0.05f : 1.0f, teammate ? 1.0f : 0.05f, teammate ? 0.22f : 0.02f );
+
+		outline = MPMenuCVarColor( teammate ? "cl_player_visibility_team_color" : "cl_player_visibility_enemy_color", visibilityFallback, outlineStrength );
+		rimlight = MPMenuCVarColor( teammate ? "cl_player_visibility_team_color" : "cl_player_visibility_enemy_color", visibilityFallback, rimlightStrength );
+		brightSkin = MPMenuCVarColor( teammate ? "cl_player_brightskin_team_color" : "cl_player_brightskin_enemy_color", brightFallback, brightSkinStrength );
+	}
+
+	gui->SetStateString( "player_outline_color", outline.ToString() );
+	gui->SetStateString( "player_rimlight_color", rimlight.ToString() );
+	gui->SetStateString( "player_brightskin_color", brightSkin.ToString() );
+	gui->SetStateFloat( "player_outline_width", idMath::ClampFloat( 0.5f, 6.0f, cvarSystem->GetCVarFloat( "cl_player_outline_width" ) ) );
+}
+
+enum {
 	MP_MENU_ASPECT_OTHER = 0,
 	MP_MENU_ASPECT_16_9 = 1,
 	MP_MENU_ASPECT_16_10 = 2
@@ -334,7 +483,7 @@ static bool FirstMPMenuModelFromList( const idStr &buildValues, idStr &declOut )
 
 		token.StripLeading( ' ' );
 		token.StripTrailing( ' ' );
-		if ( token.Length() ) {
+		if ( token.Length() && !MPMenuModelSelectionDisabled( token ) ) {
 			declOut = token;
 			return true;
 		}
@@ -343,9 +492,13 @@ static bool FirstMPMenuModelFromList( const idStr &buildValues, idStr &declOut )
 	return false;
 }
 
-static void BuildMPMenuModelList( const idDeclEntityDef *def, const bool isTeamGame, const int menuModelTeam, idStr &buildValues, idStr &buildNames ) {
+static void BuildMPMenuModelList( const idDeclEntityDef *def, const bool isTeamGame, const int menuModelTeam, idStr &buildValues, idStr &buildNames, const bool includeForceDisabled = false ) {
 	buildValues.Clear();
 	buildNames.Clear();
+
+	if ( includeForceDisabled ) {
+		AppendMPMenuModelChoice( buildValues, buildNames, "_disabled", common->GetLocalizedString( "#str_41200" ) );
+	}
 
 	if ( def ) {
 		const idKeyValue *kv = def->dict.MatchPrefix( "def_model", NULL );
@@ -421,14 +574,23 @@ static void ApplyMPMenuModelPreview( idUserInterface *gui, const idStr &modelNam
 	gui->SetStateBool( "need_update", true );
 }
 
-static void ResolveAndApplyMPMenuModelSelection( idUserInterface *gui, const idStr &buildValues, const bool isTeamGame, const int menuModelTeam, const idDeclEntityDef *def ) {
+static void ResolveAndApplyMPMenuModelSelection( idUserInterface *gui, const idStr &buildValues, const bool isTeamGame, const int menuModelTeam, const idDeclEntityDef *def, const char *modelCVarName = NULL, const bool forceModel = false ) {
 	if ( !gui ) {
 		return;
 	}
 
-	const idStr modelCVar = GetMPMenuModelCVar( menuModelTeam );
+	idStr modelCVar = GetMPMenuModelCVar( menuModelTeam );
+	if ( modelCVarName != NULL && modelCVarName[0] != '\0' ) {
+		modelCVar = modelCVarName;
+	}
 	idStr selectedDecl = cvarSystem->GetCVarString( modelCVar.c_str() );
-	if ( !selectedDecl.Length() && def ) {
+	if ( MPMenuModelSelectionDisabled( selectedDecl ) ) {
+		if ( forceModel && !selectedDecl.Length() ) {
+			cvarSystem->SetCVarString( modelCVar.c_str(), "_disabled" );
+		}
+		selectedDecl.Clear();
+	}
+	if ( !forceModel && !selectedDecl.Length() && def ) {
 		if ( menuModelTeam >= 0 && menuModelTeam < TEAM_MAX ) {
 			selectedDecl = def->dict.GetString( va( "def_default_model_%s", mpMenuModelTeamSuffix[ menuModelTeam ] ) );
 		} else {
@@ -452,7 +614,9 @@ static void ResolveAndApplyMPMenuModelSelection( idUserInterface *gui, const idS
 			MPMenuModelAllowedForTeam( team, isTeamGame, menuModelTeam ) ) {
 			selectedDecl = fallbackDecl;
 			selectedValid = true;
-			cvarSystem->SetCVarString( modelCVar.c_str(), selectedDecl.c_str() );
+			if ( !forceModel ) {
+				cvarSystem->SetCVarString( modelCVar.c_str(), selectedDecl.c_str() );
+			}
 		}
 	}
 
@@ -1233,6 +1397,11 @@ idMultiplayerGame::UpdateScoreboard
 ================
 */
 void idMultiplayerGame::UpdateScoreboard( idUserInterface *scoreBoard ) {
+	UpdatePlayerRanks();
+	if ( gameLocal.IsTeamGame() ) {
+		UpdateTeamRanks();
+	}
+
 	scoreBoard->SetStateInt( "gametype", gameLocal.gameType );
 
 	//statManager->UpdateInGameHud( scoreBoard, true );
@@ -4010,6 +4179,26 @@ void idMultiplayerGame::UpdateMainGui( void ) {
 		const idKeyValue *keyval = gameLocal.serverInfo.GetKeyVal( i );
 		mainGui->SetStateString( keyval->GetKey(), keyval->GetValue() );
 	}
+
+	idStr serverAddress = networkSystem->GetServerAddress();
+	idStr mapName;
+	const int playerCount = NumActualClients( true );
+	const int maxPlayers = gameLocal.serverInfo.GetInt( "si_maxPlayers" );
+	const char *limitLabel = common->GetLocalizedString( "#str_107660" );
+	int limitValue = gameLocal.serverInfo.GetInt( "si_fragLimit" );
+	if ( gameLocal.IsFlagGameType() ) {
+		limitLabel = common->GetLocalizedString( "#str_107661" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_captureLimit" );
+	} else if ( gameLocal.gameType == GAME_DEADZONE ) {
+		limitLabel = common->GetLocalizedString( "#str_122008" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_controlTime" );
+	}
+	mainGui->SetStateString( "join_server_line_0", va( "%s:\t%s", common->GetLocalizedString( "#str_107725" ), gameLocal.serverInfo.GetString( "si_name" ) ) );
+	mainGui->SetStateString( "join_server_line_1", va( "%s:\t%s", common->GetLocalizedString( "#str_107726" ), serverAddress.c_str() ) );
+	mainGui->SetStateString( "join_server_line_2", va( "%s:\t%s", common->GetLocalizedString( "#str_107727" ), LocalizeGametype() ) );
+	mainGui->SetStateString( "join_server_line_3", va( "%s\t%s", common->GetLocalizedString( "#str_107730" ), ResolveScoreboardMapName( gameLocal.serverInfo.GetString( "si_map" ), mapName ) ) );
+	mainGui->SetStateString( "join_server_line_4", va( "%s:\t%d/%d", common->GetLocalizedString( "#str_107663" ), playerCount, maxPlayers ) );
+	mainGui->SetStateString( "join_server_line_5", va( "%s:\t%d", limitLabel, limitValue ) );
 	mainGui->StateChanged( gameLocal.time );
 #if defined( __linux__ )
 	// replacing the oh-so-useful s_reverse with sound backend prompt
@@ -4150,6 +4339,22 @@ void idMultiplayerGame::SetupBuyMenuItems()
 
 /*
 ================
+idMultiplayerGame::ShowInitialJoinMenu
+================
+*/
+void idMultiplayerGame::ShowInitialJoinMenu( void ) {
+	if ( mainGui == NULL || currentMenu != 0 ) {
+		return;
+	}
+
+	cvarSystem->SetCVarBool( "ui_joined", false );
+	mainGui->SetStateBool( "initial_join", true );
+	nextMenu = 1;
+	gameLocal.sessionCommand = "game_startmenu";
+}
+
+/*
+================
 idMultiplayerGame::StartMenu
 ================
 */
@@ -4220,21 +4425,13 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 
 		mainGui->SetStateString( "chattext", "" );
 		mainGui->Activate( true, gameLocal.time );
+		if ( mainGui->State().GetBool( "initial_join" ) ) {
+			mainGui->HandleNamedEvent( "initialJoin" );
+			mainGui->SetStateBool( "initial_join", false );
+		}
 
-		const int menuModelTeam = ResolveMPMenuModelTeam();
-		const bool isTeamGame = gameLocal.IsTeamGame();
-		const idDeclEntityDef *def = FindMPMenuModelDef();
-
-		idStr buildValues;
-		idStr buildNames;
-		BuildMPMenuModelList( def, isTeamGame, menuModelTeam, buildValues, buildNames );
-
-		mainGui->SetStateString( "model_values", buildValues.c_str() );
-		mainGui->SetStateString( "model_names", buildNames.c_str() );
-		mainGui->SetStateBool( "player_model_updated", true );
-
-		ResolveAndApplyMPMenuModelSelection( mainGui, buildValues, isTeamGame, menuModelTeam, def );
-		mainGui->StateChanged( gameLocal.time );
+		mainGui->SetStateInt( "appearance_tab", MP_MENU_APPEARANCE_SELF );
+		UpdateMPSettingsModel( mainGui );
 
 		if( gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetUserInfo() ) {
 			cvarSystem->SetCVarString( "gui_ui_name", gameLocal.GetLocalPlayer()->GetUserInfo()->GetString( "ui_name" ) );
@@ -5159,6 +5356,19 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 				statManager->UpdateEndGameHud( statSummary, index - 1 );
 			}
 			return "continue";
+		} else if ( !idStr::Icmp( cmd, "appearance_tab" ) ) {
+			if ( args.Argc() - icmd >= 1 ) {
+				idStr tabArg = args.Argv( icmd++ );
+				if ( !tabArg.Icmp( "enemy" ) ) {
+					currentGui->SetStateInt( "appearance_tab", MP_MENU_APPEARANCE_ENEMY );
+				} else if ( !tabArg.Icmp( "team" ) || !tabArg.Icmp( "teammate" ) ) {
+					currentGui->SetStateInt( "appearance_tab", MP_MENU_APPEARANCE_TEAM );
+				} else {
+					currentGui->SetStateInt( "appearance_tab", MP_MENU_APPEARANCE_SELF );
+				}
+			}
+			UpdateMPSettingsModel( currentGui );
+			continue;
 		} else if ( !idStr::Icmp( cmd, "update_model" ) ) {
 			UpdateMPSettingsModel( currentGui );
 			continue;
@@ -5475,6 +5685,11 @@ void idMultiplayerGame::UpdateHud( idUserInterface* _mphud ) {
 
 	if ( !_mphud ) {
 		return;
+	}
+
+	UpdatePlayerRanks();
+	if ( gameLocal.IsTeamGame() ) {
+		UpdateTeamRanks();
 	}
 
 	// server demos don't have a true local player, but need one for hud updates
@@ -5897,7 +6112,7 @@ idMultiplayerGame::WriteToSnapshot
 void idMultiplayerGame::WriteToSnapshot( idBitMsgDelta &msg ) const {
 	int 		i;
  	int 		value;
-	byte		ingame[ MAX_CLIENTS / 8 ];
+	byte		ingame[ MAX_CLIENTS / 8 ] = { 0 };
 	idEntity*	ent;
 
 	assert( MAX_CLIENTS % 8 == 0 );
@@ -7363,6 +7578,8 @@ idMultiplayerGame::JoinTeam
 ================
 */
 void idMultiplayerGame::JoinTeam( const char* team ) {
+	cvarSystem->SetCVarBool( "ui_joined", true );
+
 	if( !idStr::Icmp( team, "auto" ) ) {
 		int			teamCount[ TEAM_MAX ];
 		idEntity	*ent;
@@ -7728,20 +7945,29 @@ void idMultiplayerGame::UpdateMPSettingsModel( idUserInterface* currentGui ) {
 		return;
 	}
 
-	const int menuModelTeam = ResolveMPMenuModelTeam();
+	const int appearanceTab = GetMPMenuAppearanceTab( currentGui );
 	const bool isTeamGame = gameLocal.IsTeamGame();
+	const int selfTeam = ResolveMPMenuModelTeam();
+	const int menuModelTeam = ResolveMPMenuAppearanceTeam( appearanceTab, isTeamGame, selfTeam );
+	const bool forceModel = MPMenuAppearanceForcesModel( appearanceTab );
 	const idDeclEntityDef *def = FindMPMenuModelDef();
 
-	idStr buildValues = currentGui->GetStateString( "model_values" );
-	idStr buildNames = currentGui->GetStateString( "model_names" );
-	if ( !buildValues.Length() ) {
-		BuildMPMenuModelList( def, isTeamGame, menuModelTeam, buildValues, buildNames );
-		currentGui->SetStateString( "model_values", buildValues.c_str() );
-		currentGui->SetStateString( "model_names", buildNames.c_str() );
-		currentGui->SetStateBool( "player_model_updated", true );
-	}
+	idStr buildValues;
+	idStr buildNames;
+	BuildMPMenuModelList( def, isTeamGame, menuModelTeam, buildValues, buildNames, forceModel );
 
-	ResolveAndApplyMPMenuModelSelection( currentGui, buildValues, isTeamGame, menuModelTeam, def );
+	currentGui->SetStateInt( "appearance_tab", appearanceTab );
+	currentGui->SetStateBool( "appearance_team_available", isTeamGame );
+	currentGui->SetStateBool( "appearance_is_team_game", isTeamGame );
+	currentGui->SetStateInt( "appearance_model_slot", GetMPMenuAppearanceModelSlot( appearanceTab, isTeamGame, menuModelTeam ) );
+	currentGui->SetStateInt( "appearance_target_team", menuModelTeam );
+	currentGui->SetStateString( "model_values", buildValues.c_str() );
+	currentGui->SetStateString( "model_names", buildNames.c_str() );
+	currentGui->SetStateBool( "player_model_updated", true );
+
+	const idStr modelCVar = GetMPMenuAppearanceModelCVar( appearanceTab, menuModelTeam );
+	ResolveAndApplyMPMenuModelSelection( currentGui, buildValues, isTeamGame, menuModelTeam, def, modelCVar.c_str(), forceModel );
+	ApplyMPMenuAppearancePreviewEffects( currentGui, appearanceTab, isTeamGame );
 	currentGui->StateChanged( gameLocal.realClientTime );
 }
 
