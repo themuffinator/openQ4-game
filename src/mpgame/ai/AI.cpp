@@ -386,6 +386,9 @@ void idAI::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat( projectile_height_to_distance_ratio );
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idAI::Restore: invalid attack animation info count %d", num );
+	}
 	attackAnimInfo.SetGranularity( 1 );
 	attackAnimInfo.SetNum( num );
 	for( i = 0; i < num; i++ ) {
@@ -429,6 +432,9 @@ void idAI::Restore( idRestoreGame *savefile ) {
 	savefile->ReadAngles( lookMax );
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idAI::Restore: invalid look joint count %d", num );
+	}
 	lookJoints.SetGranularity( 1 );
 	lookJoints.SetNum( num );
 	lookJointAngles.SetGranularity( 1 );

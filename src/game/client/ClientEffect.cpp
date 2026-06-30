@@ -492,6 +492,9 @@ rvClientCrawlEffect::Restore
 void rvClientCrawlEffect::Restore( idRestoreGame *savefile ) {
 	int numJoints = 0;
 	savefile->ReadInt( numJoints );
+	if ( numJoints < 0 || numJoints > MAX_GENTITIES ) {
+		savefile->Error( "rvClientCrawlEffect::Restore: invalid crawl joint count %d", numJoints );
+	}
 	crawlJoints.SetNum( numJoints );
 	for( int ix = 0; ix < numJoints; ++ix ) {
 		savefile->ReadJoint( crawlJoints[ix] );

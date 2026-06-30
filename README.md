@@ -54,6 +54,8 @@ The macOS path is intended to match openQ4's staged `baseoq4/` module naming and
 ### Continuous Integration
 Pull requests and pushes run Linux source-input contract checks plus standalone Windows and macOS CI coverage. Linux CI intentionally verifies this repository's role as source input for openQ4 rather than building standalone Linux modules. The macOS job builds the Clang-based modules and checks that each `.dylib` uses the expected package-relative `@loader_path` install name; the Windows job keeps the MSVC `.dll` flow covered.
 
+ARM64 ABI static checks also run in CI. They guard idClass allocation alignment, savegame object serialization by object index instead of raw pointer value, script pointer-width fields that must use `intptr_t`, and alignment-sensitive stack and heap allocations used by joint, trace, animation, and event paths.
+
 ### Useful Configure Options
 - Build single-player only:
   `meson setup builddir -Dbuild_mpgame=false`

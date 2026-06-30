@@ -857,24 +857,36 @@ void idTarget_SetInfluence::Restore( idRestoreGame *savefile ) {
 	float set;
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idTarget_SetInfluence::Restore: invalid light list count %d", num );
+	}
 	for( i = 0; i < num; i++ ) {
 		savefile->ReadInt( itemNum );
 		lightList.Append( itemNum );
 	}
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idTarget_SetInfluence::Restore: invalid gui list count %d", num );
+	}
 	for( i = 0; i < num; i++ ) {
 		savefile->ReadInt( itemNum );
 		guiList.Append( itemNum );
 	}
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idTarget_SetInfluence::Restore: invalid sound list count %d", num );
+	}
 	for( i = 0; i < num; i++ ) {
 		savefile->ReadInt( itemNum );
 		soundList.Append( itemNum );
 	}
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idTarget_SetInfluence::Restore: invalid generic list count %d", num );
+	}
 	for ( i = 0; i < num; i++ ) {
 		savefile->ReadInt( itemNum );
 		genericList.Append( itemNum );

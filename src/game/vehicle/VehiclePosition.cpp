@@ -740,6 +740,9 @@ void rvVehiclePosition::Restore ( idRestoreGame* savefile ) {
 	mParent.Restore ( savefile );
 
 	savefile->ReadInt ( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "rvVehiclePosition::Restore: invalid part count %d", num );
+	}
 	mParts.Clear ( );
 	mParts.SetNum ( num );	
 	for ( i = 0; i < num; i ++ ) {
@@ -762,6 +765,9 @@ void rvVehiclePosition::Restore ( idRestoreGame* savefile ) {
 	}
 
 	savefile->ReadInt ( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "rvVehiclePosition::Restore: invalid weapon count %d", num );
+	}
 	mWeapons.Clear ( );
 	mWeapons.SetNum ( num );	
 	for ( i = 0; i < num; i ++ ) {

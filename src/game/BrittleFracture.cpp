@@ -176,6 +176,9 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 	RestorePhysics( &physicsObj );
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idBrittleFracture::Restore: invalid shard count %d", num );
+	}
 	shards.SetNum( num );
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation
@@ -193,6 +196,9 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 		savefile->ReadWinding( shards[i]->winding );
 
 		savefile->ReadInt( j );
+		if ( j < 0 || j > MAX_GENTITIES ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid decal count %d for shard %d", j, i );
+		}
 		shards[i]->decals.SetNum( j );
 		for ( j = 0; j < shards[i]->decals.Num(); j++ ) {
 // RAVEN BEGIN
@@ -208,15 +214,23 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 		}
 
 		savefile->ReadInt( j );
+		if ( j < 0 || j > MAX_GENTITIES ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid neighbour count %d for shard %d", j, i );
+		}
 		shards[i]->neighbours.SetNum( j );
 		for ( j = 0; j < shards[i]->neighbours.Num(); j++ ) {
 			int index;
 			savefile->ReadInt( index );
-			assert(index != -1);
+			if ( index < 0 || index >= shards.Num() ) {
+				savefile->Error( "idBrittleFracture::Restore: invalid neighbour index %d for shard %d", index, i );
+			}
 			shards[i]->neighbours[j] = shards[index];
 		}
 
 		savefile->ReadInt( j );
+		if ( j < 0 || j > MAX_GENTITIES ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid edge-neighbour count %d for shard %d", j, i );
+		}
 		shards[i]->edgeHasNeighbour.SetNum( j );
 		for ( j = 0; j < shards[i]->edgeHasNeighbour.Num(); j++ ) {
 			savefile->ReadBool( shards[i]->edgeHasNeighbour[j] );

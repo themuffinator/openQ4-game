@@ -125,6 +125,10 @@ void rvTramGate::Restore( idRestoreGame *savefile ) {
 	int num = 0;
 	idEntityPtr<idDoor> temp;
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "rvTramGate::Restore: invalid door count %d", num );
+	}
+	doorList.Clear();
 	for( int i = 0; i < num; i++ ) {
 		temp.Restore( savefile );
 		doorList.Append( temp );

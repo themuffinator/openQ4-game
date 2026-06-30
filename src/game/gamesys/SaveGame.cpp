@@ -2190,17 +2190,26 @@ int idRestoreGame::GetBuildNumber( void ) {
 
 void Cmd_CheckSave_f( const idCmdArgs &args )
 {
-	//idPlayer	*lp = gameLocal.GetLocalPlayer();
-	//idFile		*mp = fileSystem->GetNewFileMemory();
-	//idSaveGame	sg( mp );
-	//
-	//sg.CallSave_r( lp->GetType(), lp );
-	//
-	//
-	//mp->Rewind();
-	//idPlayer		test;
-	//idRestoreGame	rg( mp );
-	//
-	//rg.CallRestore_r( test.GetType(), &test );
-}
+	idPlayer	*lp = gameLocal.GetLocalPlayer();
+	if ( lp == NULL ) {
+		common->Printf( "checkSave: no local player to test\n" );
+		return;
+	}
 
+	idFile		*mp = fileSystem->GetNewFileMemory();
+	if ( mp == NULL ) {
+		common->Printf( "checkSave: failed to allocate memory file\n" );
+		return;
+	}
+
+	idSaveGame	sg( mp );
+	sg.CallSave_r( lp->GetType(), lp );
+
+	mp->Rewind();
+	idPlayer		test;
+	idRestoreGame	rg( mp );
+	rg.CallRestore_r( test.GetType(), &test );
+
+	fileSystem->CloseFile( mp );
+	common->Printf( "checkSave: save/restore round trip completed\n" );
+}

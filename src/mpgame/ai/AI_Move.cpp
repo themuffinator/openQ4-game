@@ -304,12 +304,18 @@ void idMoveState::Restore( idRestoreGame *savefile ) {
 	savefile->ReadVec3 ( seekPos );
 
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_PATH_LEN ) {
+		savefile->Error( "idMoveState::Restore: invalid path point count %d", num );
+	}
 	for (i=0; i< num; ++i) {
 		// TOSAVE: idReachability*		reach;
 		savefile->ReadVec3( path[i].seekPos );
 	}
 
 	savefile->ReadInt( pathLen );		// cnicholson: Added unrestored var
+	if ( pathLen < 0 || pathLen > MAX_PATH_LEN ) {
+		savefile->Error( "idMoveState::Restore: invalid path length %d", pathLen );
+	}
 	savefile->ReadInt( pathArea );		// cnicholson: Added unrestored var
 	savefile->ReadInt( pathTime );		// cnicholson: Added unrestored var
 

@@ -166,6 +166,9 @@ void rvScriptFuncUtility::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt( numParms );
+	if ( numParms < 0 || numParms > MAX_GENTITIES ) {
+		savefile->Error( "rvScriptFuncUtility::Restore: invalid parameter count %d", numParms );
+	}
 	for( int ix = 0; ix < numParms; ++ix ) {
 		savefile->ReadString( element );
 		value += element;

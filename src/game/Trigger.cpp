@@ -161,6 +161,9 @@ void idTrigger::Restore( idRestoreGame *savefile ) {
 // abahr
 	int numScripts = 0;
 	savefile->ReadInt( numScripts );
+	if ( numScripts < 0 || numScripts > MAX_GENTITIES ) {
+		savefile->Error( "idTrigger::Restore: invalid script function count %d", numScripts );
+	}
 	scriptFunctions.SetNum( numScripts );
 	for( int ix = scriptFunctions.Num() - 1; ix >= 0; --ix ) {
 		scriptFunctions[ix].Restore( savefile );

@@ -223,6 +223,9 @@ void rvVehicle::Restore ( idRestoreGame *savefile ) {
 	int		num;
 
 	savefile->ReadInt ( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "rvVehicle::Restore: invalid position count %d", num );
+	}
 	positions.Clear();
 	positions.SetNum ( num );
 	for ( i = 0; i < num; i ++ ) {

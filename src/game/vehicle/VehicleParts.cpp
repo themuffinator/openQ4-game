@@ -1077,6 +1077,9 @@ void rvVehicleWeapon::Restore ( idRestoreGame* savefile ) {
 	savefile->ReadFloat ( lockRange );
 	
 	savefile->ReadInt ( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "rvVehicleWeapon::Restore: invalid joint count %d", num );
+	}
 	joints.Clear ( );
 	joints.SetNum ( num );
 	for ( i = 0; i < num; i ++ ) {

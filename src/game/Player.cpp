@@ -1154,6 +1154,9 @@ void idInventory::Restore( idRestoreGame *savefile ) {
 
 	// Load Items
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idInventory::Restore: invalid item count %d", num );
+	}
 	for( i = 0; i < num; i++ ) {
 		idDict *itemdict = new idDict;
 
@@ -1167,6 +1170,9 @@ void idInventory::Restore( idRestoreGame *savefile ) {
 
 	// Load level triggers
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idInventory::Restore: invalid level trigger count %d", num );
+	}
 	for ( i = 0; i < num; i++ ) {
 		idLevelTriggerInfo lti;
 		savefile->ReadString( lti.levelName );
@@ -1180,6 +1186,9 @@ void idInventory::Restore( idRestoreGame *savefile ) {
 	
 	// Load pickup items
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idInventory::Restore: invalid pickup item count %d", num );
+	}
 	for ( i = 0; i < num; i++ ) {
 		idItemInfo itemInfo;
 		savefile->ReadString( itemInfo.name );
@@ -1189,6 +1198,9 @@ void idInventory::Restore( idRestoreGame *savefile ) {
 
 	// Load objectives
 	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idInventory::Restore: invalid objective count %d", num );
+	}
 	for( i = 0; i < num; i++ ) {
 		idObjectiveInfo obj;
 		savefile->ReadString( obj.screenshot );
@@ -3206,6 +3218,9 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
  	RestorePhysics( &physicsObj );
 
  	savefile->ReadInt( num );
+	if ( num < 0 || num > MAX_GENTITIES ) {
+		savefile->Error( "idPlayer::Restore: invalid AAS location count %d", num );
+	}
  	aasLocation.SetGranularity( 1 );
  	aasLocation.SetNum( num );
  	for( i = 0; i < num; i++ ) {

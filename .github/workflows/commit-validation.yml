@@ -29,7 +29,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m py_compile src/buildscripts/list_sources.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python -m py_compile src/buildscripts/list_sources.py tools/tests/arm64_abi_contract.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python tools/tests/arm64_abi_contract.py
           python tools/tests/macos_meson_contract.py
           python tools/tests/source_input_contract.py
           python src/buildscripts/list_sources.py src idlib idlib/math/Simd_AltiVec.cpp >/dev/null
@@ -60,7 +61,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python -m py_compile src/buildscripts/list_sources.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python -m py_compile src/buildscripts/list_sources.py tools/tests/arm64_abi_contract.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python tools/tests/arm64_abi_contract.py
           python tools/tests/macos_meson_contract.py
           python tools/tests/source_input_contract.py
 
@@ -106,7 +108,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m py_compile src/buildscripts/list_sources.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python -m py_compile src/buildscripts/list_sources.py tools/tests/arm64_abi_contract.py tools/tests/macos_meson_contract.py tools/tests/source_input_contract.py
+          python tools/tests/arm64_abi_contract.py
           python tools/tests/macos_meson_contract.py
           python tools/tests/source_input_contract.py
 

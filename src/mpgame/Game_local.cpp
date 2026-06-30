@@ -2250,6 +2250,12 @@ void idGameLocal::InitFromNewMap( const char *mapName, idRenderWorld *renderWorl
 idGameLocal::InitFromSaveGame
 =================
 */
+static void GameLocal_ValidateSaveGameCount( idRestoreGame &savegame, int count, int maxCount, const char *detail ) {
+	if ( count < 0 || count > maxCount ) {
+		savegame.Error( "idGameLocal::InitFromSaveGame: invalid %s %d (max %d)", detail, count, maxCount );
+	}
+}
+
 bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWorld, idFile *saveGameFile ) {
 	TIME_THIS_SCOPE( __FUNCLINE__);
 	
@@ -2300,7 +2306,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 		if ( !InhibitEntitySpawn( mapEnt->epairs ) ) {
 			CacheDictionaryMedia( &mapEnt->epairs );
 			const char *classname = mapEnt->epairs.GetString( "classname" );
-			if ( classname != '\0' ) {
+			if ( classname[0] != '\0' ) {
 				FindEntityDef( classname, false );
 			}
 		}
@@ -2311,6 +2317,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	SetServerInfo( si );
 
 	savegame.ReadInt( numClients );
+	GameLocal_ValidateSaveGameCount( savegame, numClients, MAX_CLIENTS, "client count" );
 	for( i = 0; i < numClients; i++ ) {
 // RAVEN BEGIN
 // mekberg: don't read in userinfo. Grab from cvars
@@ -2349,12 +2356,17 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 
 	savegame.ReadInt( firstFreeIndex );
 	savegame.ReadInt( num_entities );
+	if ( firstFreeIndex < 0 || firstFreeIndex >= MAX_GENTITIES ) {
+		savegame.Error( "idGameLocal::InitFromSaveGame: invalid first free entity index %d", firstFreeIndex );
+	}
+	GameLocal_ValidateSaveGameCount( savegame, num_entities, MAX_GENTITIES, "entity count" );
 
 	// enityHash is restored by idEntity::Restore setting the entity name.
 
 	savegame.ReadObject( reinterpret_cast<idClass *&>( world ) );
 
 	savegame.ReadInt( num );
+	GameLocal_ValidateSaveGameCount( savegame, num, MAX_GENTITIES, "spawned entity count" );
 	for( i = 0; i < num; i++ ) {
 		savegame.ReadObject( reinterpret_cast<idClass *&>( ent ) );
 		assert( ent );
@@ -2366,6 +2378,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 // RAVEN BEGIN
 // abahr: save scriptObject proxies
 	savegame.ReadInt( num );
+	GameLocal_ValidateSaveGameCount( savegame, num, MAX_GENTITIES + MAX_CENTITIES, "script object proxy count" );
 	scriptObjectProxies.SetNum( num );
 	for( i = 0; i < num; ++i ) {
 		scriptObjectProxies[i].Restore( &savegame );
@@ -2373,6 +2386,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 // abahr: save client entity stuff
 	rvClientEntity* clientEnt = NULL;
 	savegame.ReadInt( num );
+	GameLocal_ValidateSaveGameCount( savegame, num, MAX_CENTITIES, "client spawned entity count" );
 	for( i = 0; i < num; ++i ) {
 		savegame.ReadObject( reinterpret_cast<idClass *&>( clientEnt ) );
 		assert( clientEnt );
@@ -2383,6 +2397,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 // RAVEN END
 
 	savegame.ReadInt( num );
+	GameLocal_ValidateSaveGameCount( savegame, num, MAX_GENTITIES, "active entity count" );
 	for( i = 0; i < num; i++ ) {
 		savegame.ReadObject( reinterpret_cast<idClass *&>( ent ) );
 		assert( ent );
@@ -2392,6 +2407,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	}
 
 	savegame.ReadInt( numEntitiesToDeactivate );
+	GameLocal_ValidateSaveGameCount( savegame, numEntitiesToDeactivate, MAX_GENTITIES, "deactivation count" );
 	savegame.ReadBool( sortPushers );
 	savegame.ReadBool( sortTeamMasters );
 	savegame.ReadDict( &persistentLevelInfo );
