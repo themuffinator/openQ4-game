@@ -105,7 +105,7 @@ void rvSpawner::Restore ( idRestoreGame *savefile ){
 	savefile->ReadInt( maxActive );
 	
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_SPAWNER_ACTIVE ) {
 		savefile->Error( "rvSpawner::Restore: invalid active entity count %d", num );
 	}
 	currentActive.Clear ( );
@@ -119,7 +119,7 @@ void rvSpawner::Restore ( idRestoreGame *savefile ){
 	savefile->ReadBool( skipVisible );
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_SPAWNER_POINTS ) {
 		savefile->Error( "rvSpawner::Restore: invalid spawn point count %d", num );
 	}
 	spawnPoints.SetNum( num);
@@ -128,7 +128,7 @@ void rvSpawner::Restore ( idRestoreGame *savefile ){
 	}
 
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_SPAWNER_CALLBACKS ) {
 		savefile->Error( "rvSpawner::Restore: invalid callback count %d", num );
 	}
 	callbacks.SetNum ( num );

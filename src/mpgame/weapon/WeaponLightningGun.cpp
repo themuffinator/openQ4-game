@@ -241,7 +241,7 @@ void rvWeaponLightningGun::Restore ( idRestoreGame* savefile ) {
 	
 	// Chain lightning mod
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_CHAIN_LIGHTNING_TARGETS ) {
 		savefile->Error( "rvWeaponLightningGun::Restore: invalid chain lightning count %d", num );
 	}
 	chainLightning.SetNum ( num );

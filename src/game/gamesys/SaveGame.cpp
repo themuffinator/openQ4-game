@@ -41,6 +41,29 @@ file be unloadable in some way (for example, due to script changes).
 static const int MAX_SAVEGAME_OBJECTS = MAX_GENTITIES + MAX_CENTITIES + 4096;
 static const int MAX_SAVEGAME_DICT_ENTRIES = 16384;
 
+class idScopedSaveMemoryFile {
+public:
+	idScopedSaveMemoryFile( void ) {
+		file = fileSystem->GetNewFileMemory();
+	}
+
+	~idScopedSaveMemoryFile( void ) {
+		if ( file != NULL ) {
+			fileSystem->CloseFile( file );
+		}
+	}
+
+	idFile *GetFile( void ) const {
+		return file;
+	}
+
+private:
+	idScopedSaveMemoryFile( const idScopedSaveMemoryFile & );
+	idScopedSaveMemoryFile &operator=( const idScopedSaveMemoryFile & );
+
+	idFile *file;
+};
+
 /*
 ================
 idSaveGame::idSaveGame()
@@ -2196,20 +2219,23 @@ void Cmd_CheckSave_f( const idCmdArgs &args )
 		return;
 	}
 
-	idFile		*mp = fileSystem->GetNewFileMemory();
+	idScopedSaveMemoryFile memoryFile;
+	idFile		*mp = memoryFile.GetFile();
 	if ( mp == NULL ) {
 		common->Printf( "checkSave: failed to allocate memory file\n" );
 		return;
 	}
 
-	idSaveGame	sg( mp );
-	sg.CallSave_r( lp->GetType(), lp );
+	{
+		idSaveGame	sg( mp );
+		sg.CallSave_r( lp->GetType(), lp );
+		sg.Close();
+	}
 
 	mp->Rewind();
 	idPlayer		test;
 	idRestoreGame	rg( mp );
 	rg.CallRestore_r( test.GetType(), &test );
 
-	fileSystem->CloseFile( mp );
 	common->Printf( "checkSave: save/restore round trip completed\n" );
 }

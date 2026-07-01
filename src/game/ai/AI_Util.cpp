@@ -339,7 +339,7 @@ void rvAITrigger::Restore ( idRestoreGame *savefile ) {
 	int num;
 
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_AI_TRIGGER_TESTS ) {
 		savefile->Error( "rvAITrigger::Restore: invalid AI test count %d", num );
 	}
 	testAI.Clear ( );
@@ -349,7 +349,7 @@ void rvAITrigger::Restore ( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_AI_TRIGGER_TESTS ) {
 		savefile->Error( "rvAITrigger::Restore: invalid spawner test count %d", num );
 	}
 	testSpawner.Clear ( );

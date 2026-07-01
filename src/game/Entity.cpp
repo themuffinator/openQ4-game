@@ -864,7 +864,7 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 
 	targets.Clear();
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_ENTITY_REFS ) {
 		savefile->Error( "idEntity::Restore: invalid target count %d for entity '%s'", num, name.c_str() );
 	}
 	targets.SetNum( num );
@@ -875,7 +875,7 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( health );
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_CENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_CLIENT_ENTITY_REFS ) {
 		savefile->Error( "idEntity::Restore: invalid bound client entity count %d for entity '%s'", num, name.c_str() );
 	}
 	for( i = 0; i < num; i++ ) {
@@ -928,7 +928,7 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 		signals = new signalList_t;
 		for( i = 0; i < NUM_SIGNALS; i++ ) {
 			savefile->ReadInt( num );
-			if ( num < 0 || num > MAX_GENTITIES ) {
+			if ( num < 0 || num > MAX_SAVEGAME_ENTITY_REFS ) {
 				savefile->Error( "idEntity::Restore: invalid signal count %d for signal %d on entity '%s'", num, i, name.c_str() );
 			}
 			signals->signal[ i ].SetNum( num );

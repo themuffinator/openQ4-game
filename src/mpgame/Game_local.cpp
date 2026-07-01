@@ -2469,6 +2469,9 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	savegame.ReadInt( spawnCount );
 
 	savegame.ReadInt( num );
+	if ( num < 0 ) {
+		savegame.Error( "idGameLocal::InitFromSaveGame: invalid location entity area count %d", num );
+	}
 	if ( num ) {
 		if ( num != gameRenderWorld->NumAreas() ) {
 			savegame.Error( "idGameLocal::InitFromSaveGame: number of areas in map differs from save game." );

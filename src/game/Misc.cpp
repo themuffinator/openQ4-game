@@ -4196,7 +4196,7 @@ void idPhantomObjects::Restore( idRestoreGame *savefile ) {
 	target.Restore( savefile );
 	
 	savefile->ReadInt( num );	
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_SHAKING_TARGET_HISTORY ) {
 		savefile->Error( "idShaking::Restore: invalid target history count %d", num );
 	}
 	targetTime.SetGranularity( 1 );

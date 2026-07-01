@@ -1987,7 +1987,7 @@ void rvTramCar::Restore( idRestoreGame *savefile ) {
 
 	int num = 0;
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TRAM_OCCUPANTS ) {
 		savefile->Error( "rvTramCar::Restore: invalid occupant count %d", num );
 	}
 	occupants.SetNum( num );
@@ -1996,7 +1996,7 @@ void rvTramCar::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TRAM_WEAPONS ) {
 		savefile->Error( "rvTramCar::Restore: invalid weapon count %d", num );
 	}
 	weapons.SetNum( num );
@@ -2840,7 +2840,7 @@ rvTramCar_Marine::Restore
 void rvTramCar_Marine::Restore( idRestoreGame *savefile ) {
 	int num = 0;
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TRAM_VISIBLE_ENEMIES ) {
 		savefile->Error( "rvTramCar_Marine::Restore: invalid visible enemy count %d", num );
 	}
 	visibleEnemies.SetNum( num );

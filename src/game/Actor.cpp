@@ -909,7 +909,7 @@ void idActor::Restore( idRestoreGame *savefile ) {
 	savefile->ReadMat3( viewAxis );
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_ACTOR_ENEMIES ) {
 		savefile->Error( "idActor::Restore: invalid enemy count %d", num );
 	}
 	for ( i = 0; i < num; i++ ) {
@@ -993,7 +993,7 @@ void idActor::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( painTime );
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_ACTOR_ATTACHMENTS ) {
 		savefile->Error( "idActor::Restore: invalid attachment count %d", num );
 	}
 	for ( i = 0; i < num; i++ ) {

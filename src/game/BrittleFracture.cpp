@@ -176,7 +176,7 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 	RestorePhysics( &physicsObj );
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_BRITTLE_SHARDS ) {
 		savefile->Error( "idBrittleFracture::Restore: invalid shard count %d", num );
 	}
 	shards.SetNum( num );
@@ -194,9 +194,13 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 
 	for ( i = 0; i < num; i++ ) {
 		savefile->ReadWinding( shards[i]->winding );
+		const int maxShardEdges = shards[i]->winding.GetNumPoints();
+		if ( maxShardEdges < 0 || maxShardEdges > MAX_SAVEGAME_BRITTLE_EDGES_PER_SHARD ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid winding point count %d for shard %d", maxShardEdges, i );
+		}
 
 		savefile->ReadInt( j );
-		if ( j < 0 || j > MAX_GENTITIES ) {
+		if ( j < 0 || j > MAX_SAVEGAME_BRITTLE_DECALS_PER_SHARD ) {
 			savefile->Error( "idBrittleFracture::Restore: invalid decal count %d for shard %d", j, i );
 		}
 		shards[i]->decals.SetNum( j );
@@ -214,8 +218,8 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 		}
 
 		savefile->ReadInt( j );
-		if ( j < 0 || j > MAX_GENTITIES ) {
-			savefile->Error( "idBrittleFracture::Restore: invalid neighbour count %d for shard %d", j, i );
+		if ( j < 0 || j > maxShardEdges ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid neighbour count %d for shard %d with %d edges", j, i, maxShardEdges );
 		}
 		shards[i]->neighbours.SetNum( j );
 		for ( j = 0; j < shards[i]->neighbours.Num(); j++ ) {
@@ -228,8 +232,8 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 		}
 
 		savefile->ReadInt( j );
-		if ( j < 0 || j > MAX_GENTITIES ) {
-			savefile->Error( "idBrittleFracture::Restore: invalid edge-neighbour count %d for shard %d", j, i );
+		if ( j != maxShardEdges ) {
+			savefile->Error( "idBrittleFracture::Restore: invalid edge-neighbour count %d for shard %d with %d edges", j, i, maxShardEdges );
 		}
 		shards[i]->edgeHasNeighbour.SetNum( j );
 		for ( j = 0; j < shards[i]->edgeHasNeighbour.Num(); j++ ) {

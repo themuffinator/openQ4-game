@@ -114,7 +114,7 @@ void rvViewWeapon::Restore( idRestoreGame *savefile ) {
 	int i;
 	int num;
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_GUI_EVENTS ) {
 		savefile->Error( "rvViewWeapon::Restore: invalid pending GUI event count %d", num );
 	}
 	pendingGUIEvents.SetNum ( num );

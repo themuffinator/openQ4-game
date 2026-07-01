@@ -190,7 +190,7 @@ void rvAIAction::Restore ( idRestoreGame *savefile ) {
 	savefile->Read( &fl, sizeof( fl ) );
 
 	savefile->ReadInt ( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_AI_ACTION_ANIMS ) {
 		savefile->Error( "rvAIAction::Restore: invalid animation count %d", num );
 	}
 	anims.Clear ( );

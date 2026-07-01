@@ -401,7 +401,7 @@ void rvStateThread::Restore( idRestoreGame *saveFile, idClass* owner ) {
 	saveFile->Read ( &fl, sizeof(fl) );
 
 	saveFile->ReadInt( numStates );
-	if ( numStates < 0 || numStates > MAX_GENTITIES ) {
+	if ( numStates < 0 || numStates > MAX_SAVEGAME_STATE_CALLS ) {
 		saveFile->Error( "rvStateThread::Restore: invalid active state count %d", numStates );
 	}
 	for( ; numStates > 0; numStates-- ) {
@@ -415,7 +415,7 @@ void rvStateThread::Restore( idRestoreGame *saveFile, idClass* owner ) {
 	}
 
 	saveFile->ReadInt( numStates );
-	if ( numStates < 0 || numStates > MAX_GENTITIES ) {
+	if ( numStates < 0 || numStates > MAX_SAVEGAME_STATE_CALLS ) {
 		saveFile->Error( "rvStateThread::Restore: invalid interrupted state count %d", numStates );
 	}
 	for( ; numStates > 0; numStates-- ) {

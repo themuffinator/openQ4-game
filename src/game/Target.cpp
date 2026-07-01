@@ -860,7 +860,7 @@ void idTarget_SetInfluence::Restore( idRestoreGame *savefile ) {
 	float set;
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TARGET_INFLUENCE_ITEMS ) {
 		savefile->Error( "idTarget_SetInfluence::Restore: invalid light list count %d", num );
 	}
 	for( i = 0; i < num; i++ ) {
@@ -869,7 +869,7 @@ void idTarget_SetInfluence::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TARGET_INFLUENCE_ITEMS ) {
 		savefile->Error( "idTarget_SetInfluence::Restore: invalid gui list count %d", num );
 	}
 	for( i = 0; i < num; i++ ) {
@@ -878,7 +878,7 @@ void idTarget_SetInfluence::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TARGET_INFLUENCE_ITEMS ) {
 		savefile->Error( "idTarget_SetInfluence::Restore: invalid sound list count %d", num );
 	}
 	for( i = 0; i < num; i++ ) {
@@ -887,7 +887,7 @@ void idTarget_SetInfluence::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_TARGET_INFLUENCE_ITEMS ) {
 		savefile->Error( "idTarget_SetInfluence::Restore: invalid generic list count %d", num );
 	}
 	for ( i = 0; i < num; i++ ) {

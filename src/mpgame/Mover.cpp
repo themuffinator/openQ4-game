@@ -281,7 +281,7 @@ void idMover::Restore( idRestoreGame *savefile ) {
 
 	guiTargets.Clear();
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_MOVER_GUI_TARGETS ) {
 		savefile->Error( "idMover::Restore: invalid GUI target count %d", num );
 	}
 	guiTargets.SetNum( num );
@@ -3141,7 +3141,7 @@ void idMover_Binary::Restore( idRestoreGame *savefile ) {
 
 	guiTargets.Clear();
 	savefile->ReadInt( num );
-	if ( num < 0 || num > MAX_GENTITIES ) {
+	if ( num < 0 || num > MAX_SAVEGAME_MOVER_GUI_TARGETS ) {
 		savefile->Error( "idMover_Binary::Restore: invalid GUI target count %d", num );
 	}
 	guiTargets.SetNum( num );

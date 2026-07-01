@@ -274,7 +274,7 @@ void rvWeaponRocketLauncher::Restore( idRestoreGame *saveFile ) {
 	guideEffect = clientEffect;
 	
 	saveFile->ReadInt( numEnts );
-	if ( numEnts < 0 || numEnts > MAX_GENTITIES ) {
+	if ( numEnts < 0 || numEnts > MAX_SAVEGAME_ROCKET_GUIDE_ENTS ) {
 		saveFile->Error( "rvWeaponRocketLauncher::Restore: invalid guide entity count %d", numEnts );
 	}
 	guideEnts.Clear();
