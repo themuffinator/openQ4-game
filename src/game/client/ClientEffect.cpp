@@ -61,15 +61,8 @@ rvClientEffect::~rvClientEffect
 */
 rvClientEffect::~rvClientEffect( void ) {
 	FreeEffectDef( );
-	// Prevent a double free of a SoundEmitter resulting in broken in-game sounds, when
-	// the second free releases a emitter that was reallocated to another sound. rvBSE caches
-	// this referenceSoundHandle and rvBSE::Destroy also frees the sound. rvBSE::Destroy
-	// is triggered by FreeEffectDef. Disable this free and let rvBSE do the releasing 
-	
-	// Actually, the freeing should be done here and not in BSE. The client effect allocates and 
-	// maintains the handle. Handling this here also allows emitters to be recycled for sparse
-	// looping effects.
-	soundSystem->FreeSoundEmitter( SOUNDWORLD_GAME, renderEffect.referenceSoundHandle, true );
+	// FreeEffectDef() tears down the BSE instance, and retail BSE owns the matching
+	// reference sound emitter release. Do not free the same handle a second time here.
 	renderEffect.referenceSoundHandle = -1;
 }
 
@@ -181,6 +174,8 @@ void rvClientEffect::Think ( void ) {
 			// Add the render effect
 			effectDefHandle = gameRenderWorld->AddEffectDef( &renderEffect, gameLocal.time );
 			if ( effectDefHandle < 0 ) {
+				soundSystem->FreeSoundEmitter( SOUNDWORLD_GAME, renderEffect.referenceSoundHandle, true );
+				renderEffect.referenceSoundHandle = -1;
 				PostEventMS( &EV_Remove, 0 );
 			}
 		}
