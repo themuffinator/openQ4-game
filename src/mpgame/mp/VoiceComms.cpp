@@ -154,7 +154,10 @@ void idMultiplayerGame::XmitVoiceData( void )
 	outMsg.Init( msgBuf, sizeof( msgBuf ) );
 
 	// Grab any new input and send up to the server
-	count = soundSystem->GetVoiceData( buffer, MAX_VOICE_PACKET_SIZE );
+// jmarshall - voice capture is not available through the engine sound interface.
+	//count = soundSystem->GetVoiceData( buffer, MAX_VOICE_PACKET_SIZE );
+	count = 0;
+// jmarshall end
 	if( count )
 	{
 		outMsg.BeginWriting();
@@ -184,7 +187,10 @@ void idMultiplayerGame::ReceiveAndPlayVoiceData( const idBitMsg &inMsg )
 	}
 	
 	clientNum = inMsg.ReadByte();
-	soundSystem->PlayVoiceData( clientNum, inMsg.GetReadData(), inMsg.GetRemainingData() );
+// jmarshall - voice playback is not available through the engine sound interface; parse and discard.
+	//soundSystem->PlayVoiceData( clientNum, inMsg.GetReadData(), inMsg.GetRemainingData() );
+	(void)clientNum;
+// jmarshall end
 	if( g_voiceChatDebug.GetInteger() & 4 )
 	{
 		common->Printf( "VC: Playing %d bytes\n", inMsg.GetRemainingData() );

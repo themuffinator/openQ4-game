@@ -66,8 +66,65 @@ CompareTeamByScore
 ================
 */
 int CompareTeamsByScore( const void* left, const void* right ) {
-	return ((const rvPair<int, int>*)right)->Second() - 
+	return ((const rvPair<int, int>*)right)->Second() -
 	 		((const rvPair<int, int>*)left)->Second();
+}
+
+/*
+================
+NormalizeMapDeclPath
+================
+*/
+static void NormalizeMapDeclPath( const char *mapPath, idStr &normalizedPath ) {
+	normalizedPath = ( mapPath != NULL ) ? mapPath : "";
+	normalizedPath.BackSlashesToSlashes();
+	normalizedPath.StripFileExtension();
+
+	if ( !idStr::Icmpn( normalizedPath.c_str(), "maps/", 5 ) ) {
+		normalizedPath = normalizedPath.c_str() + 5;
+	}
+}
+
+/*
+================
+MultiplayerResolveMapDecl
+
+The engine file system interface only exposes map decls by index; resolve a
+map path against the decl name and "path" keys the way the old
+GetMapDecl( name ) overload did.
+================
+*/
+const idDict *MultiplayerResolveMapDecl( const char *mapPath ) {
+	idStr normalizedPath;
+	NormalizeMapDeclPath( mapPath, normalizedPath );
+	if ( normalizedPath.Length() == 0 ) {
+		return NULL;
+	}
+
+	const idDeclEntityDef *mapDef = static_cast<const idDeclEntityDef *>( declManager->FindType( DECL_MAPDEF, normalizedPath.c_str(), false ) );
+	if ( mapDef != NULL ) {
+		return &mapDef->dict;
+	}
+
+	const int numMaps = fileSystem->GetNumMaps();
+	for ( int i = 0; i < numMaps; ++i ) {
+		const idDict *candidate = fileSystem->GetMapDecl( i );
+		if ( candidate == NULL ) {
+			continue;
+		}
+
+		idStr candidatePath;
+		NormalizeMapDeclPath( candidate->GetString( "path" ), candidatePath );
+		if ( candidatePath.Length() == 0 ) {
+			continue;
+		}
+
+		if ( !idStr::Icmp( normalizedPath.c_str(), candidatePath.c_str() ) ) {
+			return candidate;
+		}
+	}
+
+	return NULL;
 }
 
 /*
@@ -2706,7 +2763,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 			//gameLocal.ServerSendChatMessage( clientNum, "server", "Selected map is the same as current map." );
 			// mekberg: localized string
 			const char* mapName = si_map.GetString();
-			const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+			const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 			if ( mapDict ) {
 				mapName = common->GetLocalizedString( mapDict->GetString( "name", mapName ) );
 			}
@@ -2716,7 +2773,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 		}
 
 		// because of addon pk4's clients may submit votes for maps the server doesn't have - audit here
-		const idDict *mapDict = fileSystem->GetMapDecl( voteData.m_map.c_str() );
+		const idDict *mapDict = MultiplayerResolveMapDecl( voteData.m_map.c_str() );
 		if( !mapDict ) {
 			validVote = false;
 			voteData.m_fieldFlags &= ( ~VOTEFLAG_MAP );
@@ -2736,7 +2793,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 		}
 
 		if ( voteData.m_fieldFlags & VOTEFLAG_MAP ) {
-			const idDict *mapDict = fileSystem->GetMapDecl( voteData.m_map.c_str() );
+			const idDict *mapDict = MultiplayerResolveMapDecl( voteData.m_map.c_str() );
 			if ( !mapDict || !mapDict->GetInt( voteString ) ) {
 				gameLocal.ServerSendChatMessage( clientNum, "server", "gametype incompatible with map" );
 				validVote = false;
@@ -2745,7 +2802,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 		}
 	} else {
 		if ( voteData.m_fieldFlags & VOTEFLAG_MAP ) {
-			const idDict *mapDict = fileSystem->GetMapDecl( voteData.m_map.c_str() );
+			const idDict *mapDict = MultiplayerResolveMapDecl( voteData.m_map.c_str() );
 			if ( !mapDict || !mapDict->GetInt( si_gameType.GetString() ) ) {
 				gameLocal.ServerSendChatMessage( clientNum, "server", "map incompatible with gametype" );
 				validVote = false;
@@ -3012,7 +3069,7 @@ void idMultiplayerGame::ClientStartPackedVote( int clientNum, const voteStruct_t
 		if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_MAP ) ) {
 
 			const char *mapName = currentVoteData.m_map.c_str();
-			const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+			const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 			if ( mapDict ) {
 				mapName = common->GetLocalizedString( mapDict->GetString( "name", mapName ) );
 			}
@@ -3266,7 +3323,7 @@ void idMultiplayerGame::ExecutePackedVote( void ) {
 				needRestart = true;
 			}
 
-			const idDict *mapDict = fileSystem->GetMapDecl( si_map.GetString() );
+			const idDict *mapDict = MultiplayerResolveMapDecl( si_map.GetString() );
 			if ( !mapDict || !mapDict->GetInt( gameTypeString ) ) {
 				gameLocal.Warning( "server voted to gametype with no maps; resetting gametype to DM." );
 				si_gameType.SetString( "DM" );
@@ -3579,7 +3636,11 @@ void idMultiplayerGame::CommonRun( void ) {
 
 		// jscott: enable the voice recording
 		testing = cvarSystem->GetCVarBool( "s_voiceChatTest" );
-		sending = soundSystem->EnableRecording( !!( player->usercmd.buttons & BUTTON_VOICECHAT ), testing, micLevel );
+// jmarshall - voice recording is not available through the engine sound interface.
+		//sending = soundSystem->EnableRecording( !!( player->usercmd.buttons & BUTTON_VOICECHAT ), testing, micLevel );
+		sending = false;
+		micLevel = 0.0f;
+// jmarshall end
 
 		if( mainGui ) {
 			mainGui->SetStateFloat( "s_micLevel", micLevel );
@@ -3595,14 +3656,16 @@ void idMultiplayerGame::CommonRun( void ) {
 		}
 
 		if( player->GetUserInfo() && player->GetUserInfo()->GetBool( "s_voiceChatReceive" ) ) {
-			int maxChannels = soundSystem->GetNumVoiceChannels();
+// jmarshall - voice channels are not available through the engine sound interface.
+			//int maxChannels = soundSystem->GetNumVoiceChannels();
 			int clientNum = -1;
-			for (int channels = 0; channels < maxChannels; channels++ ) {
-				clientNum = soundSystem->GetCommClientNum( channels );
-				if ( -1 != clientNum ) {
-					break;
-				}
-			}
+			//for (int channels = 0; channels < maxChannels; channels++ ) {
+			//	clientNum = soundSystem->GetCommClientNum( channels );
+			//	if ( -1 != clientNum ) {
+			//		break;
+			//	}
+			//}
+// jmarshall end
 
 			// Sanity check for network errors
 			assert( clientNum > -2 && clientNum < MAX_CLIENTS );
@@ -4739,23 +4802,25 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 
 // RAVEN BEGIN
 // mekberg: set the r_mode.
-			const int rMode = common->GetRModeForMachineSpec ( cvarSystem->GetCVarInteger( "com_machineSpec" ) );
-			cvarSystem->SetCVarInteger( "r_mode", rMode );
-			currentGui->SetStateInt( "r_aspectRatio", GetMPMenuAspectGroupForMode( rMode ) );
-			switch ( currentGui->State().GetInt( "r_aspectRatio" ) ) {
-			case MP_MENU_ASPECT_16_9:
-				currentGui->HandleNamedEvent( "forceAspect1" );
-				break;
-			case MP_MENU_ASPECT_16_10:
-				currentGui->HandleNamedEvent( "forceAspect2" );
-				break;
-			default:
-				currentGui->HandleNamedEvent( "forceAspect0" );
-				break;
-			}
-			currentGui->SetStateInt( "com_machineSpec", cvarSystem->GetCVarInteger( "com_machineSpec" ) );
-			currentGui->StateChanged( gameLocal.realClientTime );
-			common->SetDesiredMachineSpec( cvarSystem->GetCVarInteger( "com_machineSpec" ) );
+// jmarshall - removed legacy quality settings code.
+			//const int rMode = common->GetRModeForMachineSpec ( cvarSystem->GetCVarInteger( "com_machineSpec" ) );
+			//cvarSystem->SetCVarInteger( "r_mode", rMode );
+			//currentGui->SetStateInt( "r_aspectRatio", GetMPMenuAspectGroupForMode( rMode ) );
+			//switch ( currentGui->State().GetInt( "r_aspectRatio" ) ) {
+			//case MP_MENU_ASPECT_16_9:
+			//	currentGui->HandleNamedEvent( "forceAspect1" );
+			//	break;
+			//case MP_MENU_ASPECT_16_10:
+			//	currentGui->HandleNamedEvent( "forceAspect2" );
+			//	break;
+			//default:
+			//	currentGui->HandleNamedEvent( "forceAspect0" );
+			//	break;
+			//}
+			//currentGui->SetStateInt( "com_machineSpec", cvarSystem->GetCVarInteger( "com_machineSpec" ) );
+			//currentGui->StateChanged( gameLocal.realClientTime );
+			//common->SetDesiredMachineSpec( cvarSystem->GetCVarInteger( "com_machineSpec" ) );
+// jmarshall end
 // RAVEN END
 
 			cmdSystem->BufferCommandText( CMD_EXEC_NOW,	"execMachineSpec" );
@@ -5036,7 +5101,7 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 // RAVEN BEGIN
 // mekberg: get localized string.
 			const char *mapName = gameLocal.serverInfo.GetString( "si_map" );
-			const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+			const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 			if ( mapDict ) {
 				mapName = common->GetLocalizedString( mapDict->GetString( "name", mapName ) );
 			}
@@ -5071,7 +5136,7 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			mainGui->SetStateString( "serverInfoList_item_2", va( "%s:\t%s", common->GetLocalizedString( "#str_107727" ), LocalizeGametype() ) );
 
 			const char *mapName = gameLocal.serverInfo.GetString( "si_map" );
-			const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+			const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 			if ( mapDict ) {
 				mapName = common->GetLocalizedString( mapDict->GetString( "name", mapName ) );
 			}
@@ -5139,7 +5204,7 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			int mapSelection = mainGui->GetStateInt( "sa_mapList_sel_0" );
 			if ( -1 == mapSelection ) {
 				
-				const idDict *mapDict = fileSystem->GetMapDecl( gameLocal.serverInfo.GetString( "si_map" ) );
+				const idDict *mapDict = MultiplayerResolveMapDecl( gameLocal.serverInfo.GetString( "si_map" ) );
 				if ( mapDict ) {
 					mainGui->SetStateString( "sa_mapName", common->GetLocalizedString( mapDict->GetString( "name" )) );
 				} else {
@@ -7242,7 +7307,7 @@ void idMultiplayerGame::ServerCallVote( int clientNum, const idBitMsg &msg ) {
 
 				// mekberg: localized string
 				const char* mapName = si_map.GetString();
-				const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+				const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 				if ( mapDict ) {
 					mapName = common->GetLocalizedString( mapDict->GetString( "name", mapName ) );
 				}
@@ -9280,7 +9345,7 @@ bool idMultiplayerGame::PickMap( idStr gameType, bool checkOnly ) {
 	}
 
 	// if we're playing a map of this gametype, don't change.
-	mapDict = fileSystem->GetMapDecl( mapName );
+	mapDict = MultiplayerResolveMapDecl( mapName );
 	if ( mapDict ) {
 		btype = mapDict->GetInt( gameType );
 		if ( btype ) {
@@ -9341,7 +9406,7 @@ bool idMultiplayerGame::PickMap( idStr gameType, bool checkOnly ) {
 			index = gameLocal.random.RandomInt( maps.Num() );
 			mapName = maps[index].c_str();
 			
-			mapDict = fileSystem->GetMapDecl( mapName );
+			mapDict = MultiplayerResolveMapDecl( mapName );
 			if ( mapDict ) {
 				btype = mapDict->GetInt( gameType );
 				if(btype)

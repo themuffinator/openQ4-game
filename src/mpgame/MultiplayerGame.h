@@ -18,6 +18,10 @@
 class idPlayer;
 class rvCTF_AssaultPoint;
 class rvItemCTFFlag;
+
+// jmarshall - the engine file system interface only exposes map decls by
+// index; this resolves a map path the way the old GetMapDecl( name ) did.
+const idDict *MultiplayerResolveMapDecl( const char *mapPath );
 typedef enum {
 	GAME_SP,
 	GAME_DM,

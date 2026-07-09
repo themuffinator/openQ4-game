@@ -12766,7 +12766,7 @@ void idPlayer::PredictionErrorDecay( void ) {
 			// this would take care of stray cases where we fail to mark that no decaying should happen
 			if ( predictionOriginError.Length() > 64.0f ) {
 				if ( net_showPredictionError.GetInteger() == entityNumber ) {
-					renderSystem->DebugGraph( 1.0f, 0.0f, 1.0f, colorRed );
+					//renderSystem->DebugGraph( 1.0f, 0.0f, 1.0f, colorRed );
 				}
 				idMat3 renderAxis = viewAxis * GetPhysics()->GetAxis();
 				idVec3 renderOrigin = GetPhysics()->GetOrigin() + modelOffset * renderAxis;
@@ -12777,8 +12777,8 @@ void idPlayer::PredictionErrorDecay( void ) {
 			}
 
 			if ( net_showPredictionError.GetInteger() == entityNumber ) {
-				renderSystem->DebugGraph( predictionOriginError.Length(), 0.0f, 100.0f, colorGreen );
-				renderSystem->DebugGraph( predictionAnglesError.Length(), 0.0f, 180.0f, colorBlue );
+				//renderSystem->DebugGraph( predictionOriginError.Length(), 0.0f, 100.0f, colorGreen );
+				//renderSystem->DebugGraph( predictionAnglesError.Length(), 0.0f, 180.0f, colorBlue );
 			}
 		}
 

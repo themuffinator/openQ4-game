@@ -1770,7 +1770,7 @@ void idCameraAnim::Start( void ) {
 // RAVEN BEGIN
 // jnewquist: Track texture usage during cinematics for streaming purposes
 #ifndef _CONSOLE
-	renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_BEGIN, cameraDef->GetAnim(1)->GetFrameRate(), GetName() );
+	//renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_BEGIN, cameraDef->GetAnim(1)->GetFrameRate(), GetName() );
 #endif
 // RAVEN END
 
@@ -1805,7 +1805,7 @@ void idCameraAnim::Stop( void ) {
 // RAVEN BEGIN
 // jnewquist: Track texture usage during cinematics for streaming purposes
 #ifndef _CONSOLE
-		renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_END, cameraDef->GetAnim(1)->GetFrameRate() );
+		//renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_END, cameraDef->GetAnim(1)->GetFrameRate() );
 #endif
 // RAVEN END
 	}
@@ -2009,7 +2009,7 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 	}
 // jnewquist: Track texture usage during cinematics for streaming purposes
 #ifndef _CONSOLE
-	renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_UPDATE, realFrame );
+	//renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_UPDATE, realFrame );
 #endif
 }
 // RAVEN END

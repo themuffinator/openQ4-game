@@ -478,7 +478,7 @@ void rvGameState::NewState( mpGameState_t newState ) {
 			if ( gameLocal.gameType == GAME_DEADZONE ) {
 				// Spawn the powerups!
 				const char *mapName = gameLocal.serverInfo.GetString( "si_map" );
-				const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+				const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 				if ( mapDict )
 					gameLocal.mpGame.deadZonePowerupCount = mapDict->GetInt("deadZonePowerupCount", "3");
 				else
@@ -639,7 +639,7 @@ void rvGameState::NewState( mpGameState_t newState ) {
 			if ( gameLocal.gameType == GAME_DEADZONE ) {
 				// Spawn the powerups!
 				const char *mapName = gameLocal.serverInfo.GetString( "si_map" );
-				const idDict *mapDict = fileSystem->GetMapDecl( mapName );
+				const idDict *mapDict = MultiplayerResolveMapDecl( mapName );
 				if ( mapDict )
 					gameLocal.mpGame.deadZonePowerupCount = mapDict->GetInt("deadZonePowerupCount", "3");
 				else

@@ -35,7 +35,8 @@ public:
 	const char			*GetLipSyncData( int langIdx = -1 ) const;
 
 	virtual const char	*DefaultDefinition( void ) const;
-	virtual bool		Parse( const char *text, const int textLength, bool noCaching );
+	virtual bool		Parse( const char *text, const int textLength ) override;
+	virtual bool		Parse( const char *text, const int textLength, bool noCaching ) override;
 	virtual void		FreeData( void );
 	virtual	bool		RebuildTextSource( void );
 	virtual size_t		Size( void ) const;
@@ -52,10 +53,10 @@ private:
 
 ID_INLINE const char *rvDeclLipSync::GetLipSyncData( int langIdx ) const 
 { 
-	if( common->LanguageHasVO( langIdx ) )
-	{
-		return( mLipSyncData.GetString( common->GetLanguage( langIdx ) ) ); 
-	}
+	//if( common->LanguageHasVO( langIdx ) )
+	//{
+	//	return( mLipSyncData.GetString( common->GetLanguage( langIdx ) ) ); 
+	//}
 
 	return( mLipSyncData.GetString( "english" ) ); 
 }
