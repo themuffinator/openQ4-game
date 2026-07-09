@@ -74,7 +74,7 @@ void rvInstance::Populate( int serverChecksum ) {
 				PACIFIER_UPDATE;
 				idPlayer* player = (idPlayer*)gameLocal.entities[ i ];
 				if( player && player->GetInstance() == instanceID ) {
-					networkSystem->ServerSendReliableMessage( player->entityNumber, mapEntityMsg, true );
+					networkSystem->ServerSendReliableMessage( player->entityNumber, mapEntityMsg );
 				}
 			}
 		}
@@ -173,7 +173,7 @@ void rvInstance::JoinInstance( idPlayer* player ) {
 	if( gameLocal.isListenServer && player == gameLocal.GetLocalPlayer() ) {
 		gameLocal.mpGame.ServerSetInstance( instanceID );
 	} else {
-		networkSystem->ServerSendReliableMessage( player->entityNumber, mapEntityMsg, true );
+		networkSystem->ServerSendReliableMessage( player->entityNumber, mapEntityMsg );
 	}
 }
 

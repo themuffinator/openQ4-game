@@ -29,7 +29,8 @@ public:
 							idDeclTable();
 	virtual size_t			Size( void ) const;
 	virtual const char *	DefaultDefinition( void ) const;
-	virtual bool			Parse( const char *text, const int textLength, bool noCaching );
+	virtual bool			Parse( const char *text, const int textLength ) override;
+	virtual bool			Parse( const char *text, const int textLength, bool noCaching ) override;
 	virtual void			FreeData( void );
 
 // RAVEN BEGIN

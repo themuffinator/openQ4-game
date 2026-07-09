@@ -1,5 +1,13 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
+/*
+===========================================================================
+
+Doom 3 GPL Source Code
+Copyright (C) 1999-2011 id Software LLC, a ZeniMax Media company.
+
+This file is part of the Doom 3 GPL Source Code.
+
+===========================================================================
+*/
 
 #ifndef __DECLPDA_H__
 #define __DECLPDA_H__
@@ -11,7 +19,6 @@
 
 ===============================================================================
 */
-
 
 class idDeclEmail : public idDecl {
 public:
@@ -41,10 +48,9 @@ private:
 	idStr					image;
 };
 
-
 class idDeclVideo : public idDecl {
 public:
-							idDeclVideo() {};
+							idDeclVideo() {}
 
 	virtual size_t			Size( void ) const;
 	virtual const char *	DefaultDefinition( void ) const;
@@ -68,10 +74,9 @@ private:
 	idStr					audio;
 };
 
-
 class idDeclAudio : public idDecl {
 public:
-							idDeclAudio() {};
+							idDeclAudio() {}
 
 	virtual size_t			Size( void ) const;
 	virtual const char *	DefaultDefinition( void ) const;
@@ -93,10 +98,9 @@ private:
 	idStr					preview;
 };
 
-
 class idDeclPDA : public idDecl {
 public:
-							idDeclPDA() { originalEmails = originalVideos = 0; };
+							idDeclPDA() { originalEmails = originalVideos = 0; }
 
 	virtual size_t			Size( void ) const;
 	virtual const char *	DefaultDefinition( void ) const;
@@ -121,7 +125,7 @@ public:
 	virtual void			SetSecurity( const char *sec ) const;
 
 	const char *			GetPdaName() const { return pdaName; }
-	const char *			GetSecurity() const {return security; }
+	const char *			GetSecurity() const { return security; }
 	const char *			GetFullName() const { return fullName; }
 	const char *			GetIcon() const { return icon; }
 	const char *			GetPost() const { return post; }
@@ -139,7 +143,7 @@ private:
 	idStr					post;
 	idStr					title;
 	mutable idStr			security;
-	mutable	int				originalEmails;
+	mutable int				originalEmails;
 	mutable int				originalVideos;
 };
 

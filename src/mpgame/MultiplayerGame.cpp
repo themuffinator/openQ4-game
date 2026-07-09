@@ -4640,22 +4640,85 @@ void idMultiplayerGame::DisableMenu( void ) {
 	currentStatTeam = -1;
 }
 
+// jmarshall - idListGUI::Add was removed from the engine interface, so the map
+//             list selection lives in gui state vars now (see MAPScan)
+/*
+================
+ResolveListSelectionFromUI
+================
+*/
+static int ResolveListSelectionFromUI( idUserInterface *gui, const char *listName, bool preferHover ) {
+	if ( !gui || !listName || !listName[ 0 ] ) {
+		return -1;
+	}
+
+	int selection = gui->State().GetInt( va( "%s_sel_0", listName ) );
+	if ( preferHover ) {
+		const int hover = gui->State().GetInt( va( "%s_hover", listName ), "-1" );
+		if ( hover >= 0 ) {
+			const char *hoverMapId = gui->State().GetString( va( "%s_item_%d_id", listName, hover ), "" );
+			if ( hoverMapId[ 0 ] ) {
+				selection = hover;
+				gui->SetStateInt( va( "%s_sel_0", listName ), selection );
+			}
+		}
+	}
+
+	return selection;
+}
+
+/*
+================
+GetSelectedMapDeclFromList
+================
+*/
+static bool GetSelectedMapDeclFromList( idUserInterface *gui, const char *listName, const idDict *&dictOut ) {
+	dictOut = NULL;
+
+	if ( !gui || !listName || !listName[ 0 ] ) {
+		return false;
+	}
+
+	const int selection = ResolveListSelectionFromUI( gui, listName, false );
+	if ( selection < 0 ) {
+		return false;
+	}
+
+	const char *mapId = gui->State().GetString( va( "%s_item_%d_id", listName, selection ), "" );
+	if ( !mapId || mapId[ 0 ] == '\0' ) {
+		return false;
+	}
+
+	const int mapNum = atoi( mapId );
+	if ( mapNum < 0 ) {
+		return false;
+	}
+
+	const idDict *dict = fileSystem->GetMapDecl( mapNum );
+	if ( !dict ) {
+		return false;
+	}
+
+	dictOut = dict;
+	return true;
+}
+// jmarshall end
+
 /*
 ================
 idMultiplayerGame::SetMapShot
 ================
 */
 void idMultiplayerGame::SetMapShot( void ) {
-#ifdef _XENON	
+#ifdef _XENON
 	// Should not be used
 	assert( 0 );
 #else
 	char screenshot[ MAX_STRING_CHARS ];
-	int mapNum = mapList->GetSelection( NULL, 0 );
 	const idDict *dict = NULL;
-	if ( mapNum >= 0 ) {
-		dict = fileSystem->GetMapDecl( mapNum );
-	}
+// jmarshall - read the selection from gui state vars instead of the idListGUI
+	GetSelectedMapDeclFromList( mainGui, "mapList", dict );
+// jmarshall end
 	fileSystem->FindMapScreenshot( dict ? dict->GetString( "path" ) : "", screenshot, MAX_STRING_CHARS );
 	mainGui->SetStateString( "current_levelshot", screenshot );
 // RAVEN BEGIN
@@ -5374,8 +5437,10 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			idStr si_map = gameLocal.serverInfo.GetString("si_map");
 			const idDict *dict;
 
-			mapList->Clear();
-			mapList->SetSelection( -1 );
+// jmarshall - idListGUI::Add was removed from the engine interface; feed the
+//             listDef through gui state vars like SetMapList does.
+			int numMapsAdded = 0;
+			int selectedIndex = -1;
 			num = fileSystem->GetNumMaps();
 			for ( i = 0; i < num; i++ ) {
 				dict = fileSystem->GetMapDecl( i );
@@ -5396,13 +5461,19 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 							mapName = dict->GetString( "path" );
 						}
 						mapName = common->GetLocalizedString( mapName );
-						mapList->Add( i, mapName );
+						mainGui->SetStateString( va( "mapList_item_%d", numMapsAdded ), mapName );
+						mainGui->SetStateInt( va( "mapList_item_%d_id", numMapsAdded ), i );
 						if ( !si_map.Icmp( dict->GetString( "path" ) ) ) {
-							mapList->SetSelection( mapList->Num() - 1 );
+							selectedIndex = numMapsAdded;
 						}
+						numMapsAdded++;
 					}
 				}
 			}
+			mainGui->DeleteStateVar( va( "mapList_item_%d", numMapsAdded ) );
+			mainGui->DeleteStateVar( va( "mapList_item_%d_id", numMapsAdded ) );
+			mainGui->SetStateInt( "mapList_sel_0", selectedIndex );
+// jmarshall end
 			// set the current level shot
 			SetMapShot(	);
 #endif

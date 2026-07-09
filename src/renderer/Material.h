@@ -1,5 +1,30 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
+/*
+===========================================================================
+
+Doom 3 GPL Source Code
+Copyright (C) 1999-2011 id Software LLC, a ZeniMax Media company.
+
+This file is part of the Doom 3 GPL Source Code (?Doom 3 Source Code?).
+
+Doom 3 Source Code is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Doom 3 Source Code is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Doom 3 Source Code.  If not, see <http://www.gnu.org/licenses/>.
+
+In addition, the Doom 3 Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 Source Code.  If not, please request a copy in writing from id Software at the address below.
+
+If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
+
+===========================================================================
+*/
 
 #ifndef __MATERIAL_H__
 #define __MATERIAL_H__
@@ -15,12 +40,6 @@
 class idImage;
 class idCinematic;
 class idUserInterface;
-class idMegaTexture;
-// RAVEN BEGIN
-// rjohnson: new shader stage system
-class rvNewShaderStage;
-class rvGLSLShaderStage;
-// RAVEN END
 
 // moved from image.h for default parm
 typedef enum {
@@ -31,32 +50,32 @@ typedef enum {
 
 typedef enum {
 	TR_REPEAT,
+	TR_MIRRORED_REPEAT,
 	TR_CLAMP,
 	TR_CLAMP_TO_BORDER,		// this should replace TR_CLAMP_TO_ZERO and TR_CLAMP_TO_ZERO_ALPHA,
 							// but I don't want to risk changing it right now
-	TR_CLAMP_TO_ZERO,		// guarantee 0,0,0,255 edge for projected textures,
-	// set AFTER image format selection
-	TR_CLAMP_TO_ZERO_ALPHA,	// guarantee 0 alpha edge for projected textures,
-	// set AFTER image format selection
-	TR_MIRRORED_REPEAT,
+							TR_CLAMP_TO_ZERO,		// guarantee 0,0,0,255 edge for projected textures,
+							// set AFTER image format selection
+							TR_CLAMP_TO_ZERO_ALPHA	// guarantee 0 alpha edge for projected textures,
+							// set AFTER image format selection
 } textureRepeat_t;
 
 typedef struct {
-	int		stayTime;		// msec for no change
-	float	maxAngle;		// maximum dot product to reject projection angles
+	int		stayTime;		// msec for full decal lifetime
+	float	maxAngle;		// minimum face-normal dot against projection direction
 } decalInfo_t;
 
 typedef enum {
 	DFRM_NONE,
 	DFRM_SPRITE,
+	DFRM_RECTSPRITE,
 	DFRM_TUBE,
 	DFRM_FLARE,
 	DFRM_EXPAND,
 	DFRM_MOVE,
 	DFRM_EYEBALL,
-// ddynerman: rectangular sprites
-	DFRM_RECTSPRITE,
-// RAVEN END
+	DFRM_PARTICLE,
+	DFRM_PARTICLE2,
 	DFRM_TURB
 } deform_t;
 
@@ -65,11 +84,9 @@ typedef enum {
 	DI_SCRATCH,		// video, screen wipe, etc
 	DI_CUBE_RENDER,
 	DI_MIRROR_RENDER,
-// RAVEN BEGIN
-// AReis: Used for water reflection/refraction.
 	DI_REFLECTION_RENDER,
 	DI_REFRACTION_RENDER,
-// RAVEN END
+	DI_XRAY_RENDER,
 	DI_REMOTE_RENDER
 } dynamicidImage_t;
 
@@ -89,14 +106,8 @@ typedef enum {
 	OP_TYPE_NE,
 	OP_TYPE_AND,
 	OP_TYPE_OR,
-	OP_TYPE_SOUND
-// RAVEN BEGIN
-// rjohnson: new shader stage system
-	,
-	OP_TYPE_GLSL_ENABLED,
-	OP_TYPE_POT_X,
-	OP_TYPE_POT_Y,
-// RAVEN END
+	OP_TYPE_SOUND,
+	OP_TYPE_GLSL_ENABLED
 } expOpType_t;
 
 typedef enum {
@@ -123,27 +134,13 @@ typedef enum {
 	EXP_REG_GLOBAL5,
 	EXP_REG_GLOBAL6,
 	EXP_REG_GLOBAL7,
-
-// RAVEN BEGIN
-// rjohnson: added vertex randomizing
-	EXP_REG_VERTEX_RANDOMIZER,
-// RAVEN END
+	EXP_REG_VERTEX_RANDOM,
 
 	EXP_REG_NUM_PREDEFINED
 } expRegister_t;
 
-// RAVEN BEGIN
-// rjohnson: added new decal support
-
-// decal registers
-#define EXP_REG_DECAL_LIFE		EXP_REG_PARM4
-#define	REG_DECAL_LIFE			4
-#define EXP_REG_DECAL_SPAWN		EXP_REG_PARM5
-#define	REG_DECAL_SPAWN			5
-// RAVEN END
-
 typedef struct {
-	expOpType_t		opType;	
+	expOpType_t		opType;
 	int				a, b, c;
 } expOp_t;
 
@@ -157,12 +154,15 @@ typedef enum {
 	TG_REFLECT_CUBE,
 	TG_SKYBOX_CUBE,
 	TG_WOBBLESKY_CUBE,
-	TG_SCREEN			// screen aligned, for mirrorRenders and screen space temporaries
+	TG_POT_CORRECTION,
+	TG_SCREEN,			// screen aligned, for mirrorRenders and screen space temporaries
+	TG_SCREEN2,
+	TG_GLASSWARP
 } texgen_t;
 
 typedef struct {
-	idCinematic *		cinematic;
-	idImage *			image;
+	idCinematic* cinematic;
+	idImage* image;
 	texgen_t			texgen;
 	bool				hasMatrix;
 	int					matrix[2][3];	// we only allow a subset of the full projection matrix
@@ -190,59 +190,124 @@ typedef enum {
 } stageVertexColor_t;
 
 static const int	MAX_FRAGMENT_IMAGES = 8;
-// RAVEN BEGIN
-// AReis: Increased MAX_VERTEX_PARMS from 4 to 16 and added MAX_FRAGMENT_PARMS.
-static const int	MAX_VERTEX_PARMS = 16;
+static const int	MAX_VERTEX_PARMS = 8;
 static const int	MAX_FRAGMENT_PARMS = 8;
-// RAVEN END
+static const int	MAX_GLSL_SHADER_PARMS = 32;
+static const int	MAX_GLSL_SHADER_NAME = 256;
+static const int	MAX_GLSL_SHADER_PARM_NAME = 32;
+
+typedef enum {
+	LEGACY_FRAGMENT_BINDING_NONE,
+	LEGACY_FRAGMENT_BINDING_LIGHT_FALLOFF,
+	LEGACY_FRAGMENT_BINDING_LIGHT_IMAGE,
+	LEGACY_FRAGMENT_BINDING_AMBIENT_NORMAL_MAP,
+	LEGACY_FRAGMENT_BINDING_NORMAL_CUBE_MAP,
+	LEGACY_FRAGMENT_BINDING_SPECULAR_TABLE
+} legacyFragmentProgramBinding_t;
+
+typedef enum {
+	GLSL_SHADERTEXTURE_IMAGE,
+	GLSL_SHADERTEXTURE_LIGHT_FALLOFF,
+	GLSL_SHADERTEXTURE_LIGHT_IMAGE,
+	GLSL_SHADERTEXTURE_AMBIENT_NORMAL_MAP,
+	GLSL_SHADERTEXTURE_NORMAL_CUBE_MAP,
+	GLSL_SHADERTEXTURE_SPECULAR_TABLE
+} glslShaderTextureBinding_t;
+
+typedef enum {
+	GLSL_SHADERPARM_REGISTERS,
+	GLSL_SHADERPARM_LOCAL_LIGHT_ORIGIN,
+	GLSL_SHADERPARM_LOCAL_VIEW_ORIGIN,
+	GLSL_SHADERPARM_LIGHT_PROJECT_S,
+	GLSL_SHADERPARM_LIGHT_PROJECT_T,
+	GLSL_SHADERPARM_LIGHT_PROJECT_Q,
+	GLSL_SHADERPARM_LIGHT_FALLOFF_S,
+	GLSL_SHADERPARM_BUMP_MATRIX_S,
+	GLSL_SHADERPARM_BUMP_MATRIX_T,
+	GLSL_SHADERPARM_DIFFUSE_MATRIX_S,
+	GLSL_SHADERPARM_DIFFUSE_MATRIX_T,
+	GLSL_SHADERPARM_SPECULAR_MATRIX_S,
+	GLSL_SHADERPARM_SPECULAR_MATRIX_T,
+	GLSL_SHADERPARM_COLOR_MODULATE,
+	GLSL_SHADERPARM_COLOR_ADD,
+	GLSL_SHADERPARM_DIFFUSE_COLOR,
+	GLSL_SHADERPARM_SPECULAR_COLOR,
+	GLSL_SHADERPARM_VIEW_ORIGIN,
+	GLSL_SHADERPARM_COLOR_MATRIX0,
+	GLSL_SHADERPARM_COLOR_MATRIX1,
+	GLSL_SHADERPARM_COLOR_MATRIX2,
+	GLSL_SHADERPARM_PROJECTION_ROW_0,
+	GLSL_SHADERPARM_PROJECTION_ROW_1,
+	GLSL_SHADERPARM_PROJECTION_ROW_2,
+	GLSL_SHADERPARM_PROJECTION_ROW_3,
+	GLSL_SHADERPARM_MODEL_ROW_0,
+	GLSL_SHADERPARM_MODEL_ROW_1,
+	GLSL_SHADERPARM_MODEL_ROW_2,
+	GLSL_SHADERPARM_GAUSSIAN_SAMPLE_OFFSETS,
+	GLSL_SHADERPARM_GAUSSIAN_SAMPLE_OFFSETS_HORIZONTAL,
+	GLSL_SHADERPARM_GAUSSIAN_SAMPLE_OFFSETS_VERTICAL,
+	GLSL_SHADERPARM_GAUSSIAN_SAMPLE_WEIGHTS,
+	GLSL_SHADERPARM_GAUSSIAN_SAMPLE_WEIGHTS2,
+	GLSL_SHADERPARM_POSTPROCESS_INV_TEX_SIZE,
+	GLSL_SHADERPARM_POSTPROCESS_TEX_SIZE,
+	GLSL_SHADERPARM_POSTPROCESS_SOURCE_COLOR_SPACE,
+	GLSL_SHADERPARM_POSTPROCESS_SMAA_QUALITY,
+	GLSL_SHADERPARM_CURRENT_RENDER_VIEWPORT_ORIGIN,
+	GLSL_SHADERPARM_CURRENT_RENDER_VIEWPORT_SIZE,
+	GLSL_SHADERPARM_CURRENT_RENDER_TEXTURE_SCALE
+} glslShaderParmBinding_t;
 
 typedef struct {
 	int					vertexProgram;
-
-// RAVEN BEGIN
-// dluetscher: added support for specifying MD5R specfic vertex programs
-// Q4SDK: maintain compatible structure padding
-#if defined( _MD5R_SUPPORT ) || defined( Q4SDK_MD5R )
 	int					md5rVertexProgram;
-#endif
-// RAVEN END
-
 	int					numVertexParms;
 	int					vertexParms[MAX_VERTEX_PARMS][4];	// evaluated register indexes
 
-// RAVEN BEGIN
-// AReis: New Fragment Parm stuff.
-	int					numFragmentParms;
-	int					fragmentParms[MAX_FRAGMENT_PARMS][4];	// evaluated register indexes
-// RAVEN END
-
 	int					fragmentProgram;
+	int					numFragmentParms;
+	int					fragmentParms[MAX_FRAGMENT_PARMS][4];
 	int					numFragmentProgramImages;
-	idImage *			fragmentProgramImages[MAX_FRAGMENT_IMAGES];
+	legacyFragmentProgramBinding_t fragmentProgramBindings[MAX_FRAGMENT_IMAGES];
+	idImage* fragmentProgramImages[MAX_FRAGMENT_IMAGES];
 
-// RAVEN BEGIN
-// AReis: Custom Bindings. These override existing parm values.
-	bool				vertexParmsBindings[MAX_VERTEX_PARMS];
-	bool				fragmentParmsBindings[MAX_FRAGMENT_PARMS];
+	bool				glslProgram;
+	char				glslProgramName[MAX_GLSL_SHADER_NAME];
+	int					glslProgramObject;
+	int					glslVertexShaderObject;
+	int					glslFragmentShaderObject;
+	bool				glslProgramLoaded;
+	bool				glslProgramValid;
+	int					glslProgramGeneration;
+	bool				customLighting;
 
-// AReis: So fragment images can be bound to program specified binding, this
-// list keeps track of which image to use (if any, 0 if use specified image).
-	int					fragmentProgramBindings[MAX_FRAGMENT_IMAGES];
-// RAVEN END
+	int					numShaderParms;
+	char				shaderParmNames[MAX_GLSL_SHADER_PARMS][MAX_GLSL_SHADER_PARM_NAME];
+	glslShaderParmBinding_t shaderParmBindings[MAX_GLSL_SHADER_PARMS];
+	int					shaderParmNumRegisters[MAX_GLSL_SHADER_PARMS];
+	int					shaderParmRegisters[MAX_GLSL_SHADER_PARMS][4];
+	int					shaderParmLocations[MAX_GLSL_SHADER_PARMS];
 
-	idMegaTexture		*megaTexture;		// handles all the binding and parameter setting 
+	int					numShaderTextures;
+	char				shaderTextureNames[MAX_FRAGMENT_IMAGES][MAX_GLSL_SHADER_PARM_NAME];
+	int					shaderTextureLocations[MAX_FRAGMENT_IMAGES];
+	glslShaderTextureBinding_t shaderTextureBindings[MAX_FRAGMENT_IMAGES];
+	idImage* shaderTextureImages[MAX_FRAGMENT_IMAGES];
+	textureFilter_t		shaderTextureFilters[MAX_FRAGMENT_IMAGES];
+	textureRepeat_t		shaderTextureRepeats[MAX_FRAGMENT_IMAGES];
 } newShaderStage_t;
 
 typedef struct {
 	int					conditionRegister;	// if registers[conditionRegister] == 0, skip stage
 	stageLighting_t		lighting;			// determines which passes interact with lights
 	int					drawStateBits;
+	int					mStageRegisterStart;	// first register allocated while parsing this stage
+	int					mNumStageRegisters;		// number of registers allocated while parsing this stage
+	int					mStageOpsStart;			// first material op emitted while parsing this stage
+	int					mNumStageOps;			// number of material ops emitted while parsing this stage
 	colorStage_t		color;
 	bool				hasAlphaTest;
-// RAVEN BEGIN
 	bool				hasAlphaFunc;
 	int					alphaTestMode;
-// RAVEN END
 	int					alphaTestRegister;
 	textureStage_t		texture;
 	stageVertexColor_t	vertexColor;
@@ -250,18 +315,7 @@ typedef struct {
 											// if the surface is alpha tested
 	float				privatePolygonOffset;	// a per-stage polygon offset
 
-	newShaderStage_t	*newStage;			// vertex / fragment program based stage
-
-// RAVEN BEGIN
-// rjohnson: new shader stage system
-	rvNewShaderStage	*newShaderStage;
-
-// rjohnson: added new decal support
-	int					mStageRegisterStart;
-	int					mNumStageRegisters;
-	int					mStageOpsStart;
-	int					mNumStageOps;
-// RAVEN END
+	newShaderStage_t* newStage;			// vertex / fragment program based stage
 } shaderStage_t;
 
 typedef enum {
@@ -273,10 +327,8 @@ typedef enum {
 
 typedef enum {
 	SS_MIN = -10000,
-// RAVEN BEGIN
 	SS_SUBVIEW = -4,	// mirrors, viewscreens, etc
 	SS_PREGUI = -3,		// guis
-// RAVEN END
 	SS_GUI = -2,		// guis
 	SS_BAD = -1,
 	SS_OPAQUE,			// opaque
@@ -304,47 +356,43 @@ typedef enum {
 } cullType_t;
 
 // these don't effect per-material storage, so they can be very large
-const int MAX_SHADER_STAGES			= 256;
+const int MAX_SHADER_STAGES = 256;
 
-const int MAX_TEXGEN_REGISTERS		= 4;
+const int MAX_TEXGEN_REGISTERS = 4;
 
-const int MAX_ENTITY_SHADER_PARMS	= 12;
+const int MAX_ENTITY_SHADER_PARMS = 12;
 
 // material flags
 typedef enum {
-	MF_DEFAULTED				= BIT(0),
-	MF_POLYGONOFFSET			= BIT(1),
-	MF_NOSHADOWS				= BIT(2),
-	MF_FORCESHADOWS				= BIT(3),
-	MF_NOSELFSHADOW				= BIT(4),
-	MF_NOPORTALFOG				= BIT(5),	// this fog volume won't ever consider a portal fogged out
-	MF_EDITOR_VISIBLE			= BIT(6)	// in use (visible) per editor
-// RAVEN BEGIN
-// jscott: for portal skies
-	, 
-	MF_SKY						= BIT(7),
-	MF_NEED_CURRENT_RENDER		= BIT(8)	// for hud guis that need sort order preseved but need back end too
-// RAVEN END
+	MF_DEFAULTED = BIT(0),
+	MF_POLYGONOFFSET = BIT(1),
+	MF_NOSHADOWS = BIT(2),
+	MF_FORCESHADOWS = BIT(3),
+	MF_NOSELFSHADOW = BIT(4),
+	MF_NOPORTALFOG = BIT(5),	// this fog volume won't ever consider a portal fogged out
+	MF_EDITOR_VISIBLE = BIT(6),	// in use (visible) per editor
+	MF_SKY = BIT(7),
+	MF_NEED_CURRENT_RENDER = BIT(8)
 } materialFlags_t;
 
 // contents flags, NOTE: make sure to keep the defines in doom_defs.script up to date with these!
 typedef enum {
-	CONTENTS_SOLID				= BIT(0),	// an eye is never valid in a solid
-	CONTENTS_OPAQUE				= BIT(1),	// blocks visibility (for ai)
-	CONTENTS_WATER				= BIT(2),	// used for water
-	CONTENTS_PLAYERCLIP			= BIT(3),	// solid to players
-	CONTENTS_MONSTERCLIP		= BIT(4),	// solid to monsters
-	CONTENTS_MOVEABLECLIP		= BIT(5),	// solid to moveable entities
-	CONTENTS_IKCLIP				= BIT(6),	// solid to IK
-	CONTENTS_BLOOD				= BIT(7),	// used to detect blood decals
-	CONTENTS_BODY				= BIT(8),	// used for actors
-	CONTENTS_PROJECTILE			= BIT(9),	// used for projectiles
-	CONTENTS_CORPSE				= BIT(10),	// used for dead bodies
-	CONTENTS_RENDERMODEL		= BIT(11),	// used for render models for collision detection
-	CONTENTS_TRIGGER			= BIT(12),	// used for triggers
-	CONTENTS_AAS_SOLID			= BIT(13),	// solid for AAS
-	CONTENTS_AAS_OBSTACLE		= BIT(14),	// used to compile an obstacle into AAS that can be enabled/disabled
-	CONTENTS_FLASHLIGHT_TRIGGER	= BIT(15),	// used for triggers that are activated by the flashlight
+	CONTENTS_SOLID = BIT(0),	// an eye is never valid in a solid
+	CONTENTS_OPAQUE = BIT(1),	// blocks visibility (for ai)
+	CONTENTS_WATER = BIT(2),	// used for water
+	CONTENTS_PLAYERCLIP = BIT(3),	// solid to players
+	CONTENTS_MONSTERCLIP = BIT(4),	// solid to monsters
+	CONTENTS_MOVEABLECLIP = BIT(5),	// solid to moveable entities
+	CONTENTS_IKCLIP = BIT(6),	// solid to IK
+	CONTENTS_BLOOD = BIT(7),	// used to detect blood decals
+	CONTENTS_BODY = BIT(8),	// used for actors
+	CONTENTS_PROJECTILE = BIT(9),	// used for projectiles
+	CONTENTS_CORPSE = BIT(10),	// used for dead bodies
+	CONTENTS_RENDERMODEL = BIT(11),	// used for render models for collision detection
+	CONTENTS_TRIGGER = BIT(12),	// used for triggers
+	CONTENTS_AAS_SOLID = BIT(13),	// solid for AAS
+	CONTENTS_AAS_OBSTACLE = BIT(14),	// used to compile an obstacle into AAS that can be enabled/disabled
+	CONTENTS_FLASHLIGHT_TRIGGER = BIT(15),	// used for triggers that are activated by the flashlight
 // RAVEN BEGIN
 // bdube: new clip that blocks monster visibility
 	CONTENTS_SIGHTCLIP			= BIT(16),	// used for blocking sight for actors and cameras
@@ -361,21 +409,24 @@ typedef enum {
 // mekberg: added
 	CONTENTS_ITEMCLIP			= BIT(23),	// so items can collide
 	CONTENTS_PROJECTILECLIP		= BIT(24),  // unlike contents_projectile, projectiles only NOT hitscans
+// RAVEN END
+
+// jmarshall - todo
 	CONTENTS_FOG				= BIT(25),
 	CONTENTS_LAVA				= BIT(26),
 	CONTENTS_SLIME				= BIT(27),
-// RAVEN END
+// jmarshall end
 
-	CONTENTS_REMOVE_UTIL		= ~(CONTENTS_AREAPORTAL|CONTENTS_NOCSG)
+	CONTENTS_REMOVE_UTIL = ~(CONTENTS_AREAPORTAL | CONTENTS_NOCSG)
 } contentsFlags_t;
 
 // surface types
-const int NUM_SURFACE_BITS		= 4;
-const int MAX_SURFACE_TYPES		= 1 << NUM_SURFACE_BITS;
+const int NUM_SURFACE_BITS = 4;
+const int MAX_SURFACE_TYPES = 1 << NUM_SURFACE_BITS;
 
 typedef enum {
 	SURFTYPE_NONE,					// default type
-    SURFTYPE_METAL,
+	SURFTYPE_METAL,
 	SURFTYPE_STONE,
 	SURFTYPE_FLESH,
 	SURFTYPE_WOOD,
@@ -394,423 +445,389 @@ typedef enum {
 
 // surface flags
 typedef enum {
-	SURF_TYPE_BIT0				= BIT(0),	// encodes the material type (metal, flesh, concrete, etc.)
-	SURF_TYPE_BIT1				= BIT(1),	// "
-	SURF_TYPE_BIT2				= BIT(2),	// "
-	SURF_TYPE_BIT3				= BIT(3),	// "
-	SURF_TYPE_MASK				= ( 1 << NUM_SURFACE_BITS ) - 1,
+	SURF_TYPE_BIT0 = BIT(0),	// encodes the material type (metal, flesh, concrete, etc.)
+	SURF_TYPE_BIT1 = BIT(1),	// "
+	SURF_TYPE_BIT2 = BIT(2),	// "
+	SURF_TYPE_BIT3 = BIT(3),	// "
+	SURF_TYPE_MASK = (1 << NUM_SURFACE_BITS) - 1,
 
-	SURF_NODAMAGE				= BIT(4),	// never give falling damage
-	SURF_SLICK					= BIT(5),	// effects game physics
-	SURF_COLLISION				= BIT(6),	// collision surface
-	SURF_LADDER					= BIT(7),	// player can climb up this surface
-	SURF_NOIMPACT				= BIT(8),	// don't make missile explosions
-	SURF_NOSTEPS				= BIT(9),	// no footstep sounds
-	SURF_DISCRETE				= BIT(10),	// not clipped or merged by utilities
-	SURF_NOFRAGMENT				= BIT(11),	// dmap won't cut surface at each bsp boundary
-	SURF_NULLNORMAL				= BIT(12),	// renderbump will draw this surface as 0x80 0x80 0x80, which
+	SURF_NODAMAGE = BIT(4),	// never give falling damage
+	SURF_SLICK = BIT(5),	// effects game physics
+	SURF_COLLISION = BIT(6),	// collision surface
+	SURF_LADDER = BIT(7),	// player can climb up this surface
+	SURF_NOIMPACT = BIT(8),	// don't make missile explosions
+	SURF_NOSTEPS = BIT(9),	// no footstep sounds
+	SURF_DISCRETE = BIT(10),	// not clipped or merged by utilities
+	SURF_NOFRAGMENT = BIT(11),	// dmap won't cut surface at each bsp boundary
+	SURF_NULLNORMAL = BIT(12),	// renderbump will draw this surface as 0x80 0x80 0x80, which
 											// won't collect light from any angle
-// RAVEN BEGIN
-// bdube: added bounce
-	SURF_BOUNCE					= BIT(13),	// projectiles should bounce off this surface
 
-// dluetscher: added no T fix
-	SURF_NO_T_FIX				= BIT(14),	// merge surfaces (like decals), but does not try to T-fix them
+	// RAVEN BEGIN
+// bdube: added bounce
+	SURF_BOUNCE = BIT(13),	// projectiles should bounce off this surface
+
+	// dluetscher: added no T fix
+	SURF_NO_T_FIX = BIT(14),	// merge surfaces (like decals), but does not try to T-fix them
 
 // RAVEN END
 } surfaceFlags_t;
 
 class idSoundEmitter;
 
-// RAVEN BEGIN
-// jsinger: added to allow support for serialization/deserialization of binary decls
-#ifdef RV_BINARYDECLS
-class idMaterial : public idDecl, public Serializable<'IMAT'> {
-public:
-// jsinger:
-	virtual void		Write( SerialOutputStream &stream ) const;
-	virtual void		AddReferences() const;
-						idMaterial( SerialInputStream &stream );
-#else
 class idMaterial : public idDecl {
-#endif
-// rjohnson: new shader stage system
-	friend class rvNewShaderStage;
-	friend class rvGLSLShaderStage;
-// RAVEN END
-
 public:
-						idMaterial();
+	idMaterial();
 	virtual				~idMaterial();
 
-	virtual size_t		Size( void ) const;
-	virtual bool		SetDefaultText( void );
-	virtual const char *DefaultDefinition( void ) const;
-	virtual bool		Parse( const char *text, const int textLength, bool noCaching );
-	virtual void		FreeData( void );
-	virtual void		Print( void ) const;
+	virtual size_t		Size(void) const;
+	virtual bool		SetDefaultText(void);
+	virtual const char* DefaultDefinition(void) const;
+	virtual bool		Parse(const char* text, const int textLength) override;
+	virtual bool		Parse(const char* text, const int textLength, bool noCaching) override;
+	virtual void		FreeData(void);
+	virtual void		Print(void) const;
+	virtual bool		RebuildTextSource(void) override { return false; }
+	virtual bool		Validate(const char* psText, int iTextLength, idStr& strReportTo) const override;
 
-						// returns the internal image name for stage 0, which can be used
-						// for the renderer CaptureRenderToImage() call
-						// I'm not really sure why this needs to be virtual...
-	virtual const char	*ImageName( void ) const;
+	//BSM Nerve: Added for material editor
+	bool				Save(const char* fileName = NULL);
 
-	void				ReloadImages( bool force ) const;
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	int					streamCount;
-	int					streamTimeStamp;
-	static int			masterStreamTimeStamp;
-	bool				StreamImages( bool inBackground );
-	void				UnstreamImages( void );
-	void				UpdateImage( int stage, const byte *data, int width, int height );
-#endif
-// RAVEN END
-						// returns number of stages this material contains
-	const int			GetNumStages( void ) const { return numStages; }
+	// returns the internal image name for stage 0, which can be used
+	// for the renderer CaptureRenderToImage() call
+	// I'm not really sure why this needs to be virtual...
+	virtual const char* ImageName(void) const;
 
-						// get a specific stage
-	const shaderStage_t *GetStage( const int index ) const { assert(index >= 0 && index < numStages); return &stages[index]; }
+	void				ReloadImages(bool force) const;
 
-						// get the first bump map stage, or NULL if not present.
-						// used for bumpy-specular
-	const shaderStage_t *GetBumpStage( void ) const;
+	// returns number of stages this material contains
+	const int			GetNumStages(void) const { return numStages; }
 
-						// returns true if the material will draw anything at all.  Triggers, portals,
-						// etc, will not have anything to draw.  A not drawn surface can still castShadow,
-						// which can be used to make a simplified shadow hull for a complex object set
-						// as noShadow
-	bool				IsDrawn( void ) const { return ( numStages > 0 || entityGui != 0 || gui != NULL ); }
+	// get a specific stage
+	const shaderStage_t* GetStage(const int index) const { assert(index >= 0 && index < numStages); return &stages[index]; }
 
-						// returns true if the material will draw any non light interaction stages
-	bool				HasAmbient( void ) const { return ( numAmbientStages > 0 ); }
+	// get the first bump map stage, or NULL if not present.
+	// used for bumpy-specular
+	const shaderStage_t* GetBumpStage(void) const;
 
-						// returns true if material has a gui
-	bool				HasGui( void ) const { return ( entityGui != 0 || gui != NULL ); }
+	// custom GLSL lighting can use the stock shadow-map receiver only when the
+	// material still exposes active non-custom bump/diffuse/specular stages.
+	bool				HasActiveCustomGLSLLighting(const float* registers) const;
+	bool				HasActiveStockLightingInteractions(const float* registers) const;
+	bool				CanUseStockShadowMapReceiverForCustomGLSLLighting(const float* registers) const;
 
-						// returns true if the material will generate another view, either as
-						// a mirror or dynamic rendered image
-	bool				HasSubview( void ) const { return hasSubview; }
+	// returns true if the material will draw anything at all.  Triggers, portals,
+	// etc, will not have anything to draw.  A not drawn surface can still castShadow,
+	// which can be used to make a simplified shadow hull for a complex object set
+	// as noShadow
+	bool				IsDrawn(void) const { return (numStages > 0 || entityGui != 0 || gui != NULL); }
 
-						// returns true if the material will generate shadows, not making a
-						// distinction between global and no-self shadows
-	bool				SurfaceCastsShadow( void ) const { return TestMaterialFlag( MF_FORCESHADOWS ) || !TestMaterialFlag( MF_NOSHADOWS ); }
+	// returns true if the material will draw any non light interaction stages
+	bool				HasAmbient(void) const { return (numAmbientStages > 0); }
 
-						// returns true if the material will generate interactions with fog/blend lights
-						// All non-translucent surfaces receive fog unless they are explicitly noFog
-	bool				ReceivesFog( void ) const { return ( IsDrawn() && !noFog && coverage != MC_TRANSLUCENT ); }
+	// returns true if material has a gui
+	bool				HasGui(void) const { return (entityGui != 0 || gui != NULL); }
 
-						// returns true if the material will generate interactions with normal lights
-						// Many special effect surfaces don't have any bump/diffuse/specular
-						// stages, and don't interact with lights at all
-	bool				ReceivesLighting( void ) const { return numAmbientStages != numStages; }
+	// returns true if the material will generate another view, either as
+	// a mirror or dynamic rendered image
+	bool				HasSubview(void) const { return hasSubview; }
 
-						// returns true if the material should generate interactions on sides facing away
-						// from light centers, as with noshadow and noselfshadow options
-	bool				ReceivesLightingOnBackSides( void ) const { return ( materialFlags & (MF_NOSELFSHADOW|MF_NOSHADOWS) ) != 0; }
+	// Retail collision helpers are hidden, explicitly non-shadowing collision
+	// hulls. Keep this separate from SurfaceCastsShadow() so callers can decide
+	// whether they need retail shadow semantics or render-only admission.
+	bool				IsDedicatedCollisionSurface(void) const {
+		return (surfaceFlags & SURF_COLLISION) != 0 && !IsDrawn() && TestMaterialFlag(MF_NOSHADOWS) && !TestMaterialFlag(MF_FORCESHADOWS);
+	}
 
-						// Standard two-sided triangle rendering won't work with bump map lighting, because
-						// the normal and tangent vectors won't be correct for the back sides.  When two
-						// sided lighting is desired. typically for alpha tested surfaces, this is
-						// addressed by having CleanupModelSurfaces() create duplicates of all the triangles
-						// with apropriate order reversal.
-	bool				ShouldCreateBackSides( void ) const { return shouldCreateBackSides; }
+	// returns true if the material will generate shadows, not making a
+	// distinction between global and no-self shadows
+	bool				SurfaceCastsShadow(void) const {
+		return TestMaterialFlag(MF_FORCESHADOWS) || !TestMaterialFlag(MF_NOSHADOWS);
+	}
 
-						// characters and models that are created by a complete renderbump can use a faster
-						// method of tangent and normal vector generation than surfaces which have a flat
-						// renderbump wrapped over them.
-	bool				UseUnsmoothedTangents( void ) const { return unsmoothedTangents; }
+	// returns true if the material will generate interactions with fog/blend lights
+	// All non-translucent surfaces receive fog unless they are explicitly noFog
+	bool				ReceivesFog(void) const { return (IsDrawn() && !noFog && coverage != MC_TRANSLUCENT); }
 
-						// by default, monsters can have blood overlays placed on them, but this can
-						// be overrided on a per-material basis with the "noOverlays" material command.
-						// This will always return false for translucent surfaces
-	bool				AllowOverlays( void ) const { return allowOverlays; }
+	// returns true if the material will generate interactions with normal lights
+	// Many special effect surfaces don't have any bump/diffuse/specular
+	// stages, and don't interact with lights at all
+	bool				ReceivesLighting(void) const { return numAmbientStages != numStages; }
 
-						// MC_OPAQUE, MC_PERFORATED, or MC_TRANSLUCENT, for interaction list linking and
-						// dmap flood filling
-						// The depth buffer will not be filled for MC_TRANSLUCENT surfaces
-						// FIXME: what do nodraw surfaces return?
-	materialCoverage_t	Coverage( void ) const { return coverage; }
+	// returns true if the material should generate interactions on sides facing away
+	// from light centers, as with noshadow and noselfshadow options
+	bool				ReceivesLightingOnBackSides(void) const { return (materialFlags & (MF_NOSELFSHADOW | MF_NOSHADOWS)) != 0; }
 
-						// returns true if this material takes precedence over other in coplanar cases
-	bool				HasHigherDmapPriority( const idMaterial &other ) const { return ( IsDrawn() && !other.IsDrawn() ) ||
-																						( Coverage() < other.Coverage() ); }
+	// Standard two-sided triangle rendering won't work with bump map lighting, because
+	// the normal and tangent vectors won't be correct for the back sides.  When two
+	// sided lighting is desired. typically for alpha tested surfaces, this is
+	// addressed by having CleanupModelSurfaces() create duplicates of all the triangles
+	// with apropriate order reversal.
+	bool				ShouldCreateBackSides(void) const { return shouldCreateBackSides; }
 
-						// returns a idUserInterface if it has a global gui, or NULL if no gui
-	idUserInterface	*	GlobalGui( void ) const { return gui; }
+	// characters and models that are created by a complete renderbump can use a faster
+	// method of tangent and normal vector generation than surfaces which have a flat
+	// renderbump wrapped over them.
+	bool				UseUnsmoothedTangents(void) const { return unsmoothedTangents; }
 
-						// a discrete surface will never be merged with other surfaces by dmap, which is
-						// necessary to prevent mutliple gui surfaces, mirrors, autosprites, and some other
-						// special effects from being combined into a single surface
-						// guis, merging sprites or other effects, mirrors and remote views are always discrete
-	bool				IsDiscrete( void ) const { return ( entityGui || gui || deform != DFRM_NONE || sort == SS_SUBVIEW ||
-												( surfaceFlags & SURF_DISCRETE ) != 0 ); }
+	// by default, monsters can have blood overlays placed on them, but this can
+	// be overrided on a per-material basis with the "noOverlays" material command.
+	// This will always return false for translucent surfaces
+	bool				AllowOverlays(void) const { return allowOverlays; }
 
-						// Normally, dmap chops each surface by every BSP boundary, then reoptimizes.
-						// For gigantic polygons like sky boxes, this can cause a huge number of planar
-						// triangles that make the optimizer take forever to turn back into a single
-						// triangle.  The "noFragment" option causes dmap to only break the polygons at
-						// area boundaries, instead of every BSP boundary.  This has the negative effect
-						// of not automatically fixing up interpenetrations, so when this is used, you
-						// should manually make the edges of your sky box exactly meet, instead of poking
-						// into each other.
-	bool				NoFragment( void ) const { return ( surfaceFlags & SURF_NOFRAGMENT ) != 0; }
+	// MC_OPAQUE, MC_PERFORATED, or MC_TRANSLUCENT, for interaction list linking and
+	// dmap flood filling
+	// The depth buffer will not be filled for MC_TRANSLUCENT surfaces
+	// FIXME: what do nodraw surfaces return?
+	materialCoverage_t	Coverage(void) const { return coverage; }
 
-// RAVEN BEGIN
-// dluetscher: added SURF_NO_T_FIX to merge surfaces (like decals), but skipping any T-junction fixing
-	bool				NoTFix( void ) const { return ( surfaceFlags & SURF_NO_T_FIX ) != 0; }
-// RAVEN END
+	// returns true if this material takes precedence over other in coplanar cases
+	bool				HasHigherDmapPriority(const idMaterial& other) const {
+		return (IsDrawn() && !other.IsDrawn()) ||
+			(Coverage() < other.Coverage());
+	}
+
+	// returns a idUserInterface if it has a global gui, or NULL if no gui
+	idUserInterface* GlobalGui(void) const { return gui; }
+
+	// a discrete surface will never be merged with other surfaces by dmap, which is
+	// necessary to prevent mutliple gui surfaces, mirrors, autosprites, and some other
+	// special effects from being combined into a single surface
+	// guis, merging sprites or other effects, mirrors and remote views are always discrete
+	bool				IsDiscrete(void) const {
+		return (entityGui || gui || deform != DFRM_NONE || sort == SS_SUBVIEW ||
+			(surfaceFlags & SURF_DISCRETE) != 0);
+	}
+
+	// Normally, dmap chops each surface by every BSP boundary, then reoptimizes.
+	// For gigantic polygons like sky boxes, this can cause a huge number of planar
+	// triangles that make the optimizer take forever to turn back into a single
+	// triangle.  The "noFragment" option causes dmap to only break the polygons at
+	// area boundaries, instead of every BSP boundary.  This has the negative effect
+	// of not automatically fixing up interpenetrations, so when this is used, you
+	// should manually make the edges of your sky box exactly meet, instead of poking
+	// into each other.
+	bool				NoFragment(void) const { return (surfaceFlags & SURF_NOFRAGMENT) != 0; }
+
+	// Raven decals can be merged for batching, but should not participate in
+	// T-junction fixing because that can split visible decal edges.
+	bool				NoTFix(void) const { return (surfaceFlags & SURF_NO_T_FIX) != 0; }
 
 	//------------------------------------------------------------------
-
-// RAVEN BEGIN
-// jscott: added accessor
-	const rvDeclMatType *		GetMaterialType( void ) const { return( materialType ); }
-	const rvDeclMatType *		GetMaterialType( idVec2 &tc ) const;
-	byte *						GetMaterialTypeArray( void ) const { return( materialTypeArray ); }
-	const char *				GetMaterialTypeArrayName( void ) const { return( materialTypeArrayName.c_str() ); }
-
-// jscott: for profiling
-	int							GetTexelCount( void ) const;
-
-// jscott: for error checking
-	bool						HasDefaultedImage( void ) const;
-
-// jscott: for Radiant
-	idImage *					GetDiffuseImage( void ) const;
-
-// AReis: New portal distance culling stuff.
-	float						GetPortalNear( void ) const { return( portalDistanceNear ); }
-	float						GetPortalFar( void ) const { return( portalDistanceFar ); }
-	const idImage *				GetPortalImage( void ) const { return( portalImage ); }
-
-// jscott: to prevent a recursive crash
-	virtual	bool				RebuildTextSource( void ) { return( false ); }
-// scork: for detailed error-reporting
-	virtual bool				Validate( const char *psText, int iTextLength, idStr &strReportTo ) const;
-// RAVEN END
-
-	//==================================================================
 	// light shader specific functions, only called for light entities
 
 						// lightshader option to fill with fog from viewer instead of light from center
 	bool				IsFogLight() const { return fogLight; }
 
-						// perform simple blending of the projection, instead of interacting with bumps and textures
+	// perform simple blending of the projection, instead of interacting with bumps and textures
 	bool				IsBlendLight() const { return blendLight; }
 
-						// an ambient light has non-directional bump mapping and no specular
+	// an ambient light has non-directional bump mapping and no specular
 	bool				IsAmbientLight() const { return ambientLight; }
 
-						// implicitly no-shadows lights (ambients, fogs, etc) will never cast shadows
-						// but individual light entities can also override this value
-	bool				LightCastsShadows() const { return TestMaterialFlag( MF_FORCESHADOWS ) ||
-								( !fogLight && !ambientLight && !blendLight && !TestMaterialFlag( MF_NOSHADOWS ) ); }
+	// implicitly no-shadows lights (ambients, fogs, etc) will never cast shadows
+	// but individual light entities can also override this value
+	bool				LightCastsShadows() const {
+		return TestMaterialFlag(MF_FORCESHADOWS) ||
+			(!fogLight && !ambientLight && !blendLight && !TestMaterialFlag(MF_NOSHADOWS));
+	}
 
-						// fog lights, blend lights, ambient lights, etc will all have to have interaction
-						// triangles generated for sides facing away from the light as well as those
-						// facing towards the light.  It is debatable if noshadow lights should effect back
-						// sides, making everything "noSelfShadow", but that would make noshadow lights
-						// potentially slower than normal lights, which detracts from their optimization
-						// ability, so they currently do not.
+	const rvDeclMatType* GetMaterialType(void) const { return(materialType); }
+	const rvDeclMatType* GetMaterialType(idVec2& tc) const;
+	byte* GetMaterialTypeArray(void) const { return(materialTypeArray); }
+	const char* GetMaterialTypeArrayName(void) const { return(materialTypeArrayName.c_str()); }
+
+	// fog lights, blend lights, ambient lights, etc will all have to have interaction
+	// triangles generated for sides facing away from the light as well as those
+	// facing towards the light.  It is debatable if noshadow lights should effect back
+	// sides, making everything "noSelfShadow", but that would make noshadow lights
+	// potentially slower than normal lights, which detracts from their optimization
+	// ability, so they currently do not.
 	bool				LightEffectsBackSides() const { return fogLight || ambientLight || blendLight; }
 
-						// NULL unless an image is explicitly specified in the shader with "lightFalloffShader <image>"
-	idImage	*			LightFalloffImage() const { return lightFalloffImage; }
+	// NULL unless an image is explicitly specified in the shader with "lightFalloffShader <image>"
+	idImage* LightFalloffImage() const { return lightFalloffImage; }
 
 	//------------------------------------------------------------------
 
 						// returns the renderbump command line for this shader, or an empty string if not present
-	const char *		GetRenderBump() const { return renderBump; };
+	const char* GetRenderBump() const { return renderBump; };
 
-						// set specific material flag(s)
-	void				SetMaterialFlag( const int flag ) const { materialFlags |= flag; }
+	// set specific material flag(s)
+	void				SetMaterialFlag(const int flag) const { materialFlags |= flag; }
 
-						// clear specific material flag(s)
-	void				ClearMaterialFlag( const int flag ) const { materialFlags &= ~flag; }
+	// clear specific material flag(s)
+	void				ClearMaterialFlag(const int flag) const { materialFlags &= ~flag; }
 
-						// test for existance of specific material flag(s)
-	bool				TestMaterialFlag( const int flag ) const { return ( materialFlags & flag ) != 0; }
+	// test for existance of specific material flag(s)
+	bool				TestMaterialFlag(const int flag) const { return (materialFlags & flag) != 0; }
 
-						// get content flags
-	const int			GetContentFlags( void ) const { return contentFlags; }
+	// get content flags
+	const int			GetContentFlags(void) const { return contentFlags; }
 
-						// get surface flags
-	const int			GetSurfaceFlags( void ) const { return surfaceFlags; }
+	// get surface flags
+	const int			GetSurfaceFlags(void) const { return surfaceFlags; }
 
-						// gets name for surface type (stone, metal, flesh, etc.)
-	const surfTypes_t	GetSurfaceType( void ) const { return static_cast<surfTypes_t>( surfaceFlags & SURF_TYPE_MASK ); }
+	// gets name for surface type (stone, metal, flesh, etc.)
+	const surfTypes_t	GetSurfaceType(void) const { return static_cast<surfTypes_t>(surfaceFlags & SURF_TYPE_MASK); }
 
-						// get material description
-	const char *		GetDescription( void ) const { return desc; }
+	// get material description
+	const char* GetDescription(void) const { return desc; }
 
-						// get sort order
-	const float			GetSort( void ) const { return sort; }
-						// this is only used by the gui system to force sorting order
-						// on images referenced from tga's instead of materials. 
-						// this is done this way as there are 2000 tgas the guis use
-	void				SetSort( float s ) const { sort = s; };
+	// get sort order
+	const float			GetSort(void) const { return sort; }
+	// this is only used by the gui system to force sorting order
+	// on images referenced from tga's instead of materials. 
+	// this is done this way as there are 2000 tgas the guis use
+	void				SetSort(float s) const { sort = s; };
 
-						// DFRM_NONE, DFRM_SPRITE, etc
-	deform_t			Deform( void ) const { return deform; }
+	// DFRM_NONE, DFRM_SPRITE, etc
+	deform_t			Deform(void) const { return deform; }
 
-						// flare size, expansion size, etc
-	const int			GetDeformRegister( int index ) const { return deformRegisters[index]; }
+	// flare size, expansion size, etc
+	const int			GetDeformRegister(int index) const { return deformRegisters[index]; }
 
-						// particle system to emit from surface and table for turbulent
-	const idDecl		*GetDeformDecl( void ) const { return deformDecl; }
+	// particle system to emit from surface and table for turbulent
+	const idDecl* GetDeformDecl(void) const { return deformDecl; }
 
-						// currently a surface can only have one unique texgen for all the stages
+	// currently a surface can only have one unique texgen for all the stages
 	texgen_t			Texgen() const;
 
-						// wobble sky parms
-	const int *			GetTexGenRegisters( void ) const { return texGenRegisters; }
+	// wobble sky parms
+	const int* GetTexGenRegisters(void) const { return texGenRegisters; }
 
-						// get cull type
-	const cullType_t	GetCullType( void ) const { return cullType; }
+	// get cull type
+	const cullType_t	GetCullType(void) const { return cullType; }
 
-	float				GetEditorAlpha( void ) const { return editorAlpha; }
+	float				GetEditorAlpha(void) const { return editorAlpha; }
 
-	int					GetEntityGui( void ) const { return entityGui; }
+	int					GetEntityGui(void) const { return entityGui; }
 
-	decalInfo_t			GetDecalInfo( void ) const { return decalInfo; }
+	decalInfo_t			GetDecalInfo(void) const { return decalInfo; }
 
-						// spectrums are used for "invisible writing" that can only be
-						// illuminated by a light of matching spectrum
-	int					Spectrum( void ) const { return spectrum; }
+	// spectrums are used for "invisible writing" that can only be
+	// illuminated by a light of matching spectrum
+	int					Spectrum(void) const { return spectrum; }
 
-	float				GetPolygonOffset( void ) const { return polygonOffset; }
+	float				GetPolygonOffset(void) const { return polygonOffset; }
+	float				GetPortalNear(void) const { return portalDistanceNear; }
+	float				GetPortalFar(void) const { return portalDistanceFar; }
+	const idImage *		GetPortalImage(void) const { return portalImage; }
 
-	float				GetSurfaceArea( void ) const { return surfaceArea; }
-	void				AddToSurfaceArea( float area ) { surfaceArea += area; }
+	float				GetSurfaceArea(void) const { return surfaceArea; }
+	void				AddToSurfaceArea(float area) { surfaceArea += area; }
 
 	//------------------------------------------------------------------
 
 						// returns the length, in milliseconds, of the videoMap on this material,
 						// or zero if it doesn't have one
-	int					CinematicLength( void ) const;
+	int					CinematicLength(void) const;
 
-	void				CloseCinematic( void ) const;
+	// Returns the current cinematic status enum value (see cinStatus_t in Cinematic.h).
+	int					CinematicStatus( int time ) const;
 
-	void				ResetCinematicTime( int time ) const;
+	void				CloseCinematic(void) const;
 
-	void				UpdateCinematic( int time ) const;
+	void				ResetCinematicTime(int time) const;
+
+	void				UpdateCinematic(int time) const;
 
 	//------------------------------------------------------------------
 
 						// gets an image for the editor to use
-	idImage *			GetEditorImage( void ) const;
-	int					GetImageWidth( void ) const;
-	int					GetImageHeight( void ) const;
+	idImage* GetEditorImage(void) const;
+	int					GetImageWidth(void) const;
+	int					GetImageHeight(void) const;
 
-	void				SetGui( const char *_gui ) const;
+	void				SetGui(const char* _gui) const;
 
-						// just for resource tracking
-	void				SetImageClassifications( int tag ) const;
+	// just for resource tracking
+	void				SetImageClassifications(int tag) const;
 
 	//------------------------------------------------------------------
 
 						// returns number of registers this material contains
 	const int			GetNumRegisters() const { return numRegisters; }
 
-// RAVEN BEGIN
-// rjohnson: added vertex randomizing
-						// regs should point to a float array large enough to hold GetNumRegisters() floats
-	void				EvaluateRegisters( float *regs, const float entityParms[MAX_ENTITY_SHADER_PARMS], 
-											const struct viewDef_s *view, int soundEmitter = 0, idVec3 *randomizer = NULL ) const;
-// RAVEN END
+	// regs should point to a float array large enough to hold GetNumRegisters() floats
+	void				EvaluateRegisters(float* regs, const float entityParms[MAX_ENTITY_SHADER_PARMS],
+		const struct viewDef_s* view, idSoundEmitter* soundEmitter = NULL) const;
+	void				EvaluateStageRegisters(int stageIndex, float* regs, const float entityParms[MAX_ENTITY_SHADER_PARMS],
+		float floatTime) const;
 
-// RAVEN BEGIN
-// rjohnson: added new decal support
-	void				EvaluateStageRegisters( int StageIndex, float *registers, const float shaderParms[MAX_ENTITY_SHADER_PARMS], float FloatTime) const;
+	// if a material only uses constants (no entityParm or globalparm references), this
+	// will return a pointer to an internal table, and EvaluateRegisters will not need
+	// to be called.  If NULL is returned, EvaluateRegisters must be used.
+	const float* ConstantRegisters() const;
 
-// rjohnson: started tracking image/material usage
-	void				ClearUseCount( void ) { useCount = 0; }
-	void				IncreaseUseCount( void ) { useCount++; globalUseCount++; }
-	int					GetUseCount( void ) { return useCount; }
-	int					GetGlobalUseCount( void ) const { return globalUseCount; }
-	void				ResolveUse( void );
-// RAVEN END
-
-						// if a material only uses constants (no entityParm or globalparm references), this
-						// will return a pointer to an internal table, and EvaluateRegisters will not need
-						// to be called.  If NULL is returned, EvaluateRegisters must be used.
-	const float *		ConstantRegisters() const;
-
-	bool				SuppressInSubview() const				{ return suppressInSubview; };
-	bool				IsPortalSky() const						{ return portalSky; };
+	bool				SuppressInSubview() const { return suppressInSubview; };
+	bool				IsPortalSky() const { return portalSky; };
 	void				AddReference();
+	void				ClearUseCount() { useCount = 0; }
+	void				IncreaseUseCount() { useCount++; globalUseCount++; }
+	void				AddLevelLoadReference() { IncreaseUseCount(); }
+	int					GetUseCount() const { return useCount; }
+	int					GetGlobalUseCount() const { return globalUseCount; }
+	void				ResolveUse();
 
 private:
 	// parse the entire material
 	void				CommonInit();
-// RAVEN BEGIN
-// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
-	bool				ParseMaterial( idLexer &src );
-// RAVEN END
-	bool				MatchToken( idLexer &src, const char *match );
-	void				ParseSort( idLexer &src );
-	void				ParseBlend( idLexer &src, shaderStage_t *stage );
-	void				ParseVertexParm( idLexer &src, newShaderStage_t *newStage );
-// RAVEN BEGIN
-// AReis: New fragment parm stuff.
-	void				ParseFragmentParm( idLexer &src, newShaderStage_t *newStage );
-// RAVEN END
-	void				ParseFragmentMap( idLexer &src, newShaderStage_t *newStage );
-
-// RAVEN BEGIN
-// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
-	bool				ParseStage( idLexer &src, const textureRepeat_t trpDefault = TR_REPEAT );
-// RAVEN END
-	void				ParseDeform( idLexer &src );
-	void				ParseDecalInfo( idLexer &src );
-	bool				CheckSurfaceParm( idToken *token );
-	int					GetExpressionConstant( float f );
-	int					GetExpressionTemporary( void );
-	expOp_t	*			GetExpressionOp( void );
-	int					EmitOp( int a, int b, expOpType_t opType );
-	int					ParseEmitOp( idLexer &src, int a, expOpType_t opType, int priority );
-	int					ParseTerm( idLexer &src );
-	int					ParseExpressionPriority( idLexer &src, int priority );
-	int					ParseExpression( idLexer &src );
-	void				ClearStage( shaderStage_t *ss );
-	int					NameToSrcBlendMode( const idStr &name );
-	int					NameToDstBlendMode( const idStr &name );
-	void				MultiplyTextureMatrix( textureStage_t *ts, int registers[2][3] );	// FIXME: for some reason the const is bad for gcc and Mac
+	void				ParseMaterial(idLexer& src);
+	bool				MatchToken(idLexer& src, const char* match);
+	void				ParseSort(idLexer& src);
+	void				ParseBlend(idLexer& src, shaderStage_t* stage);
+	void				ParseVertexParm(idLexer& src, newShaderStage_t* newStage);
+	void				ParseFragmentParm(idLexer& src, newShaderStage_t* newStage);
+	void				ParseFragmentMap(idLexer& src, newShaderStage_t* newStage);
+	void				ParseShaderParm(idLexer& src, newShaderStage_t* newStage);
+	void				ParseShaderTexture(idLexer& src, newShaderStage_t* newStage);
+	void				ParseStage(idLexer& src, const textureRepeat_t trpDefault = TR_REPEAT);
+	void				ParseDeform(idLexer& src);
+	void				ParseDecalInfo(idLexer& src);
+	bool				CheckSurfaceParm(idToken* token);
+	int					GetExpressionConstant(float f);
+	int					GetExpressionTemporary(void);
+	expOp_t* GetExpressionOp(void);
+	int					EmitOp(int a, int b, expOpType_t opType);
+	int					ParseEmitOp(idLexer& src, int a, expOpType_t opType, int priority);
+	int					ParseTerm(idLexer& src);
+	int					ParseExpressionPriority(idLexer& src, int priority);
+	int					ParseExpression(idLexer& src);
+	void				ClearStage(shaderStage_t* ss);
+	int					NameToSrcBlendMode(const idStr& name);
+	int					NameToDstBlendMode(const idStr& name);
+	void				MultiplyTextureMatrix(textureStage_t* ts, int registers[2][3]);	// FIXME: for some reason the const is bad for gcc and Mac
 	void				SortInteractionStages();
-// RAVEN BEGIN
-// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
-	bool				AddImplicitStages( const textureRepeat_t trpDefault = TR_REPEAT );
-// RAVEN END
+	void				AddImplicitStages(const textureRepeat_t trpDefault = TR_REPEAT);
 	void				CheckForConstantRegisters();
 
 private:
 	idStr				desc;				// description
 	idStr				renderBump;			// renderbump command options, without the "renderbump" at the start
 
-	idImage	*			lightFalloffImage;
+	idImage* lightFalloffImage;
 
 	int					entityGui;			// draw a gui with the idUserInterface from the renderEntity_t
 											// non zero will draw gui, gui2, or gui3 from renderEnitty_t
-	mutable idUserInterface	*gui;			// non-custom guis are shared by all users of a material
+	mutable idUserInterface* gui;			// non-custom guis are shared by all users of a material
+
 
 // RAVEN BEGIN
 // jscott: for material types
-	const rvDeclMatType *materialType;
-	byte				*materialTypeArray;	// an array of material type indices generated from the hit image
+	const rvDeclMatType* materialType;
+	byte* materialTypeArray;	// an array of material type indices generated from the hit image
 	idStr				materialTypeArrayName;
 	int					MTAWidth;
 	int					MTAHeight;
 
-// rjohnson: started tracking image/material usage
+	// rjohnson: started tracking image/material usage
 	int					useCount;
 	int					globalUseCount;
 
-// AReis: New portal distance culling stuff.
+	// AReis: New portal distance culling stuff.
 	float				portalDistanceNear;
 	float				portalDistanceFar;
-	idImage *			portalImage;
+	idImage* portalImage;
 // RAVEN END
 
 	bool				noFog;				// surface does not create fog interactions
@@ -822,21 +839,21 @@ private:
 	int					contentFlags;		// content flags
 	int					surfaceFlags;		// surface flags	
 	mutable int			materialFlags;		// material flags
-	
+
 	decalInfo_t			decalInfo;
 
 
 	mutable	float		sort;				// lower numbered shaders draw before higher numbered
 	deform_t			deform;
 	int					deformRegisters[4];		// numeric parameter for deforms
-	const idDecl		*deformDecl;			// for surface emitted particle deforms and tables
+	const idDecl* deformDecl;			// for surface emitted particle deforms and tables
 
 	int					texGenRegisters[MAX_TEXGEN_REGISTERS];	// for wobbleSky
 
 	materialCoverage_t	coverage;
 	cullType_t			cullType;			// CT_FRONT_SIDED, CT_BACK_SIDED, or CT_TWO_SIDED
 	bool				shouldCreateBackSides;
-	
+
 	bool				fogLight;
 	bool				blendLight;
 	bool				ambientLight;
@@ -845,19 +862,19 @@ private:
 	bool				allowOverlays;
 
 	int					numOps;
-	expOp_t *			ops;				// evaluate to make expressionRegisters
-																										
-	int					numRegisters;																			//
-	float *				expressionRegisters;
+	expOp_t* ops;				// evaluate to make expressionRegisters
 
-	float *				constantRegisters;	// NULL if ops ever reference globalParms or entityParms
+	int					numRegisters;																			//
+	float* expressionRegisters;
+
+	float* constantRegisters;	// NULL if ops ever reference globalParms or entityParms
 
 	int					numStages;
 	int					numAmbientStages;
-																										
-	shaderStage_t *		stages;
 
-	struct mtrParsingData_s	*pd;			// only used during parsing
+	shaderStage_t* stages;
+
+	struct mtrParsingData_s* pd;			// only used during parsing
 
 	float				surfaceArea;		// only for listSurfaceAreas
 
@@ -865,7 +882,7 @@ private:
 	// all the invisible and uncompressed images.
 	// If editorImage is NULL, it will atempt to load editorImageName, and set editorImage to that or defaultImage
 	idStr				editorImageName;
-	mutable idImage *	editorImage;		// image used for non-shaded preview
+	mutable idImage* editorImage;		// image used for non-shaded preview
 	float				editorAlpha;
 
 	bool				suppressInSubview;
@@ -873,19 +890,9 @@ private:
 	int					refCount;
 };
 
-typedef idList<const idMaterial *> idMatList;
+// Parser-free regression hook for custom GLSL receiver compatibility helpers.
+bool R_MaterialCustomGLSLReceiverHelperSelfTest( void );
 
-// RAVEN BEGIN
-class rvMaterialEdit
-{
-public:
-	virtual ~rvMaterialEdit() {}
-	virtual	void		SetGui( idMaterial *edit, const char *name ) = 0;
-	virtual int			GetImageWidth( const idMaterial *edit ) const = 0;
-	virtual int			GetImageHeight( const idMaterial *edit ) const = 0;
-};
-
-extern rvMaterialEdit	*materialEdit;
-// RAVEN END
+typedef idList<const idMaterial*> idMatList;
 
 #endif /* !__MATERIAL_H__ */

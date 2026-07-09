@@ -163,11 +163,13 @@ class idServerReliableMessageSender : public idMessageSender {
 public:
 	virtual channelDestType_t GetChannelType( void ) const { return CHANNEL_DEST_RELIABLE_SERVER; }
 	virtual void Send( const idBitMsg &msg ) const {
+// jmarshall - engine reliable sends no longer take an inhibitRepeater flag
 		if ( excludeClient != -1 ) {
-			networkSystem->ServerSendReliableMessageExcluding( excludeClient, msg, inhibitRepeater );
+			networkSystem->ServerSendReliableMessageExcluding( excludeClient, msg );
 		} else {
-			networkSystem->ServerSendReliableMessage( clientNum, msg, inhibitRepeater );
+			networkSystem->ServerSendReliableMessage( clientNum, msg );
 		}
+// jmarshall end
 	};
 	const idMessageSender &To( int _clientNum, bool _inhibitRepeater = false ) {
 		clientNum = _clientNum;
@@ -192,11 +194,13 @@ class idRepeaterReliableMessageSender : public idMessageSender {
 public:
 	virtual channelDestType_t GetChannelType( void ) const { return CHANNEL_DEST_RELIABLE_REPEATER; }
 	virtual void Send( const idBitMsg &msg ) const {
-		if ( excludeClient != -1 ) {
-			networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg, inhibitHeader, repeaterClient );
-		} else {
-			networkSystem->RepeaterSendReliableMessage( repeaterClient, msg, inhibitHeader, clientNum );
-		}
+// jmarshall - engine has no repeater reliable channel
+		//if ( excludeClient != -1 ) {
+		//	networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg, inhibitHeader, repeaterClient );
+		//} else {
+		//	networkSystem->RepeaterSendReliableMessage( repeaterClient, msg, inhibitHeader, clientNum );
+		//}
+// jmarshall end
 	};
 	const idMessageSender &To( int _clientNum, int asClient = -1, bool _inhibitHeader = false ) {
 		repeaterClient = _clientNum;

@@ -1412,7 +1412,9 @@ void idGameLocal::UpdateRepeaterInfo( bool transmit ) {
 		outMsg.Init( msgBuf, sizeof( msgBuf ) );
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_SERVERINFO );
 		outMsg.WriteDeltaDict( gameLocal.repeaterInfo, NULL );
-		networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall - engine has no repeater reliable channel
+		//networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall end
 	}
 }
 
@@ -1450,7 +1452,7 @@ void idGameLocal::SetServerInfo( const idDict &_serverInfo ) {
 		outMsg.Init( msgBuf, sizeof( msgBuf ) );
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_SERVERINFO );
 		outMsg.WriteDeltaDict( gameLocal.serverInfo, NULL );
-		networkSystem->ServerSendReliableMessage( -1, outMsg, true );
+		networkSystem->ServerSendReliableMessage( -1, outMsg );
 	} else if ( isClient ) {
 		networkSystem->ClientSetServerInfo( gameLocal.serverInfo );
 		isTVClient = ( gameLocal.serverInfo.GetInt( "si_tv" ) == 1 ) ? true : false;
@@ -1823,14 +1825,16 @@ void idGameLocal::MapRestart( int instance ) {
 			outMsg.WriteByte( GAME_RELIABLE_MESSAGE_RESTART );
 			outMsg.WriteBits( 1, 1 );
 			outMsg.WriteDeltaDict( serverInfo, NULL );
-			networkSystem->ServerSendReliableMessage( -1, outMsg, true );
+			networkSystem->ServerSendReliableMessage( -1, outMsg );
 
 			if ( isRepeater ) {
 				outMsg.Init( msgBuf, sizeof( msgBuf ) );
 				outMsg.WriteByte( GAME_RELIABLE_MESSAGE_RESTART );
 				outMsg.WriteBits( 1, 1 );
 				outMsg.WriteDeltaDict( repeaterInfo, NULL );
-				networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall - engine has no repeater reliable channel
+				//networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall end
 			}
 
 			LocalMapRestart( instance );

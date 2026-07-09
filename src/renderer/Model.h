@@ -19,7 +19,7 @@
 
 // RAVEN BEGIN
 // dluetscher: declare some classes for MD5R support
-#ifdef _MD5R_SUPPORT
+#if defined( _MD5R_SUPPORT ) || defined( Q4SDK_MD5R )
 class rvMesh;
 #endif
 // RAVEN END
@@ -30,6 +30,9 @@ class rvMesh;
 #define MD5_ANIM_EXT			"md5anim"
 #define MD5_CAMERA_EXT			"md5camera"
 #define MD5_VERSION				10
+#define MD5R_MODEL_EXT			"md5r"
+#define MD5R_VERSION_STRING		"MD5RVersion"
+#define MD5R_VERSION			1
 
 // using shorts for triangle indexes can save a significant amount of traffic, but
 // to support the large models that renderBump loads, they need to be 32 bits
@@ -84,6 +87,7 @@ typedef struct srfTriangles_s {
 	idBounds					bounds;					// for culling
 
 	int							ambientViewCount;		// if == tr.viewCount, it is visible this view
+	int							surfaceFlags;			// STF_* runtime surface classification
 
 	bool						generateNormals;		// create normals from geometry, instead of using explicit ones
 	bool						tangentsCalculated;		// set when the vertex tangents have been calculated
@@ -189,6 +193,17 @@ typedef struct srfTriangles_s {
 #endif
 // RAVEN END
 } srfTriangles_t;
+
+static const int STF_SOFT_PARTICLE_CANDIDATE = 1 << 0;
+
+static ID_INLINE bool R_TriHasPrimBatchMesh( const srfTriangles_t *tri ) {
+#if defined( _MD5R_SUPPORT ) || defined( Q4SDK_MD5R )
+	return tri != NULL && tri->primBatchMesh != NULL;
+#else
+	(void)tri;
+	return false;
+#endif
+}
 
 typedef idList<srfTriangles_t *> idTriList;
 
@@ -385,7 +400,7 @@ public:
 
 // rjohnson: added debugging code to try and catch a free error
 	// purges all the data before deleting
-	virtual						~idRenderModel( void );
+	//virtual						~idRenderModel( void );
 // RAVEN END
 
 	// Loads static models only, dynamic models must be loaded by the modelManager
@@ -402,7 +417,7 @@ public:
 // RAVEN BEGIN
 // AReis: Added this function for the height map model.
 	// Like InitEmpty but allows a set of arguments to be passed in through a dict.
-	virtual void				InitEmptyFromArgs( const char *name, idDict &Args ) = 0;
+	//virtual void				InitEmptyFromArgs( const char *name, idDict &Args ) = 0;
 // RAVEN END
 
 	// dynamic model instantiations will be created with this
@@ -497,14 +512,14 @@ public:
 	// dynamic models should return a fast, conservative approximation
 	// static models should usually return the exact value
 	virtual idBounds			Bounds( const struct renderEntity_s *ent = NULL ) const = 0;
-	virtual bool				BoundsFromJoints( const idJointMat *joints, idBounds &bounds ) const { return false; }
+	virtual bool				BoundsFromJoints( const idJointMat *joints, idBounds &bounds ) const;
 
 	// returns value != 0.0f if the model requires the depth hack
 	virtual float				DepthHack( void ) const = 0;
 
 // RAVEN BEGIN
 // dluetscher: added call to determine if a collision surface exists within this model
-	virtual bool				HasCollisionSurface( const struct renderEntity_s *ent ) const = 0;
+	virtual bool				HasCollisionSurface( const struct renderEntity_s *ent ) const;
 // RAVEN END
 
 	// returns a static model based on the definition and view
@@ -516,7 +531,8 @@ public:
 	// wasn't precached correctly.
 // RAVEN BEGIN
 // dluetscher: added surface mask parameter
-	virtual idRenderModel *		InstantiateDynamicModel( const struct renderEntity_s *ent, const struct viewDef_s *view, idRenderModel *cachedModel, dword surfMask = ~SURF_COLLISION  ) = 0;
+	virtual idRenderModel *		InstantiateDynamicModel( const struct renderEntity_s *ent, const struct viewDef_s *view, idRenderModel *cachedModel  ) = 0;
+	virtual idRenderModel *		InstantiateDynamicModel( const struct renderEntity_s *ent, const struct viewDef_s *view, idRenderModel *cachedModel, dword surfMask );
 // RAVEN END
 
 	// Returns the number of joints or 0 if the model is not an MD5
@@ -534,22 +550,25 @@ public:
 	// Returns the default animation pose or NULL if the model is not an MD5.
 	virtual const idJointQuat *	GetDefaultPose( void ) const = 0;
 
+	// Returns the skin-space to model-local transforms used by MD5R skinning, or NULL.
+	virtual const idJointMat *	GetSkinSpaceToLocalMats( void ) const;
+
 	// Returns number of the joint nearest to the given triangle.
 	virtual int					NearestJoint( int surfaceNum, int a, int c, int b ) const = 0;
 
 	// Writing to and reading from a demo file.
-	virtual void				ReadFromDemo( class idDemoFile *f ) = 0;
-	virtual void				WriteToDemo( class idDemoFile *f ) = 0;
+//	virtual void				ReadFromDemo( class idDemoFile *f ) = 0;
+//	virtual void				WriteToDemo( class idDemoFile *f ) = 0;
 
 // RAVEN BEGIN
 // bdube: surface flag manipulation
-	virtual int					GetSurfaceMask ( const char* surface ) const = 0;;
-
-// jscott: for portal skies
-	virtual void				SetHasSky( bool on ) = 0;
-	virtual bool				GetHasSky( void ) const = 0;
-// ddynerman: Wolf LOD code
-	virtual void				SetViewEntity( const struct viewEntity_s *ve ) = 0;
+	virtual int					GetSurfaceMask( const char *surface ) const = 0;
+//
+//// jscott: for portal skies
+//	virtual void				SetHasSky( bool on ) = 0;
+//	virtual bool				GetHasSky( void ) const = 0;
+//// ddynerman: Wolf LOD code
+	virtual void				SetViewEntity( const struct viewEntity_s *ve );
 // RAVEN END
 
 // RAVEN BEGIN 

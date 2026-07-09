@@ -35,7 +35,7 @@ public:
 	// This also will void the incremental creep in memory consumption as one progresses form
 	// one level to the next, since we delete the idRenderModel instances which can add up to
 	// several MB.
-	virtual void			Reset(void) = 0;
+//	virtual void			Reset(void) = 0;
 // RAVEN END
 
 	// called only by renderer::BeginLevelLoad
@@ -43,6 +43,7 @@ public:
 
 	// called only by renderer::EndLevelLoad
 	virtual void			EndLevelLoad() = 0;
+	virtual int				CountPendingLevelLoads() const = 0;
 
 	// allocates a new empty render model.
 	virtual idRenderModel *	AllocModel() = 0;
@@ -57,24 +58,27 @@ public:
 	// returns NULL if not loadable
 	virtual	idRenderModel *	CheckModel( const char *modelName ) = 0;
 
+	// returns true when the model pointer is currently owned by the model manager
+	virtual bool			ContainsModel( const idRenderModel *model ) const = 0;
+
 // RAVEN BEGIN
 // jscott: for tools
-	virtual srfTriangles_t		*AllocStaticTriSurf( int verts, int indices ) = 0;
-	virtual void				FreeStaticTriSurf( srfTriangles_t *tris ) = 0;
-	virtual srfTriangles_t		*CopyStaticTriSurf( const srfTriangles_t *tri ) = 0;
-	virtual	srfTriangles_t		*PolytopeSurface( int numPlanes, const idPlane *planes, idWinding **windings ) = 0;
-	virtual void				CreateSilIndexes( srfTriangles_t *tris ) = 0;
-	virtual void				DeriveFacePlanes( srfTriangles_t *tris ) = 0;
-	virtual	void				BoundTriSurf( srfTriangles_t *tri ) = 0;
-	virtual	void				CleanupTriangles( srfTriangles_t *tris, bool createNormals, bool identifySilEdges, bool useUnsmoothedTangents, bool needSilMultiply ) = 0;
-	virtual	void				SimpleCleanupTriangles( srfTriangles_t *tri ) = 0;
-	virtual srfTriangles_t		*CreateShadowVolume( const srfTriangles_t *tri, const class idRenderLight *light, int optimize ) = 0;
-
-	virtual class idRenderLight	*CreateLightDef( void ) = 0;
-	virtual void				FreeLightDef( class idRenderLight *light ) = 0;
-
-// rjohnson: added debugging code to try and catch a free error
-	virtual	bool				CheckModel( idRenderModel *model ) = 0;
+//	virtual srfTriangles_t		*AllocStaticTriSurf( int verts, int indices ) = 0;
+//	virtual void				FreeStaticTriSurf( srfTriangles_t *tris ) = 0;
+//	virtual srfTriangles_t		*CopyStaticTriSurf( const srfTriangles_t *tri ) = 0;
+//	virtual	srfTriangles_t		*PolytopeSurface( int numPlanes, const idPlane *planes, idWinding **windings ) = 0;
+//	virtual void				CreateSilIndexes( srfTriangles_t *tris ) = 0;
+//	virtual void				DeriveFacePlanes( srfTriangles_t *tris ) = 0;
+//	virtual	void				BoundTriSurf( srfTriangles_t *tri ) = 0;
+//	virtual	void				CleanupTriangles( srfTriangles_t *tris, bool createNormals, bool identifySilEdges, bool useUnsmoothedTangents, bool needSilMultiply ) = 0;
+//	virtual	void				SimpleCleanupTriangles( srfTriangles_t *tri ) = 0;
+//	virtual srfTriangles_t		*CreateShadowVolume( const srfTriangles_t *tri, const class idRenderLight *light, int optimize ) = 0;
+//
+//	virtual class idRenderLight	*CreateLightDef( void ) = 0;
+//	virtual void				FreeLightDef( class idRenderLight *light ) = 0;
+//
+//// rjohnson: added debugging code to try and catch a free error
+//	virtual	bool				CheckModel( idRenderModel *model ) = 0;
 // RAVEN END
 
 	// returns the default cube model
@@ -99,8 +103,8 @@ public:
 	virtual	void			FreeModelVertexCaches() = 0;
 
 	// print memory info
-	virtual	void			PrintMemInfo( MemInfo *mi ) = 0;
-	virtual size_t			ListModelSummary( void ) = 0;
+	//virtual	void			PrintMemInfo( MemInfo *mi ) = 0;
+	//virtual size_t			ListModelSummary( void ) = 0;
 };
 
 // this will be statically pointed at a private implementation

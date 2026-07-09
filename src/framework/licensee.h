@@ -7,10 +7,22 @@
 ===============================================================================
 */
 
+#include "openq4_version_generated.h"
+
 // RAVEN BEGIN
 // rjohnson: this is the name of the game we are making
-#define GAME_NAME						"Quake4"			// appears on window titles and errors
+#define PROJECT_NAME					"openQ4"
+#define PROJECT_AUTHOR					"themuffinator"
+#define PROJECT_COMPANY				"DarkMatter Productions"
+#define PROJECT_VERSION				OPENQ4_VERSION_SHORT
+#define PROJECT_VERSION_FULL			OPENQ4_VERSION
+#define PROJECT_WEBSITE				"www.darkmatter-quake.com"
+#define PROJECT_REPO					"https://github.com/themuffinator/openQ4"
+
+#define GAME_NAME						PROJECT_NAME			// appears on window titles and errors
 #define GAME_ICON						"q4icon.bmp"
+
+#define ENGINE_VERSION					PROJECT_NAME " " PROJECT_VERSION
 
 // jnewquist: build type
 #if defined(_DEBUG)
@@ -21,29 +33,42 @@
 #define GAME_BUILD_TYPE					""
 #elif defined(_RELEASE)
 #define	GAME_BUILD_TYPE					""
-#else
+#endif
+
+// Ensure GAME_BUILD_TYPE is always defined (some build systems only define NDEBUG).
+#ifndef GAME_BUILD_TYPE
 #define GAME_BUILD_TYPE					""
 #endif
 
 // paths
-#define	CD_BASEDIR						"Quake4"
+#define	CD_BASEDIR						"openQ4"
 #define	BASE_GAMEDIR					"q4base"
 #define	BASE_MPGAMEDIR					"q4mp"
+#define OPENQ4_GAMEDIR					"baseoq4"
 #define	DEMO_GAMEDIR					"demo"
 
 // filenames
-#define	CD_EXE							"Quake4.exe"
+#if defined( _M_X64 ) || defined( __x86_64__ )
+	#define OPENQ4_BINARY_ARCH			"x64"
+#elif defined( _M_IX86 ) || defined( __i386__ )
+	#define OPENQ4_BINARY_ARCH			"x86"
+#elif defined( _M_ARM64 ) || defined( __aarch64__ )
+	#define OPENQ4_BINARY_ARCH			"arm64"
+#else
+	#define OPENQ4_BINARY_ARCH			"unknown"
+#endif
+#define	CD_EXE							PROJECT_NAME "-client_" OPENQ4_BINARY_ARCH ".exe"
 
 #ifdef _XENON
-#define CONFIG_FILE						"save:/Quake4Config.cfg"
+#define CONFIG_FILE						"save:/openQ4Config.cfg"
 #else
-#define CONFIG_FILE						"Quake4Config.cfg"
+#define CONFIG_FILE						"openQ4Config.cfg"
 #endif
 
 // base folder where the source code lives
 #define SOURCE_CODE_BASE_FOLDER			"code"
 
-#define DEVELOPER_DOMAIN				"ravensoft.com"
+#define DEVELOPER_DOMAIN				"darkmatter-quake.com"
 // RAVEN END
 
 
@@ -94,24 +119,28 @@
 #define ASYNC_PROTOCOL_MAJOR			2
 // RAVEN END
 
-// Savegame Version
-// Update when you can no longer maintain compatibility with previous savegames.
-// For testing, we're using the build number to ensure no one ever tries to load a stale savegame
-#define SAVEGAME_VERSION				VERSION_BUILD_NUMBER
+// Savegame header compatibility:
+// - New openQ4 saves use Quake 4's retail engine header name/version.
+// - Older openQ4 builds wrote openQ4-branded headers with versions 0 and 1.
+#define SAVEGAME_GAME_NAME_RETAIL				"Quake4"
+#define SAVEGAME_GAME_NAME_LEGACY_OPENQ4		"openQ4"
+#define SAVEGAME_VERSION						1834
+#define LEGACY_OPENQ4_SAVEGAME_VERSION			0
+#define LEGACY_OPENQ4_SAVEGAME_VERSION_ALT		1
 
 // editor info
 #define EDITOR_WINDOWTEXT				"QuakeEdit"
 
 // win32 info
-#define WIN32_CONSOLE_CLASS				"Quake 4 WinConsole"
-#define WIN32_SPLASH_CLASS				"Quake 4 Splash"
-#define	WIN32_WINDOW_CLASS_NAME			"Quake4"
-#define	WIN32_FAKE_WINDOW_CLASS_NAME	"QUAKE4_WGL_FAKE"
+#define WIN32_CONSOLE_CLASS				"openQ4 WinConsole"
+#define WIN32_SPLASH_CLASS				"openQ4 Splash"
+#define	WIN32_WINDOW_CLASS_NAME			"openQ4"
+#define	WIN32_FAKE_WINDOW_CLASS_NAME	"OPENQ4_WGL_FAKE"
 
 #ifdef __linux__
-	#define DEFAULT_BASE_PATH				"/usr/local/games/quake4"
+	#define DEFAULT_BASE_PATH				"/usr/local/games/openq4"
 #elif defined( MACOS_X )
-	#define DEFAULT_BASE_PATH				"/Applications/Quake4"
+	#define DEFAULT_BASE_PATH				"/Applications/openQ4"
 #endif
 
 // CD Key file info

@@ -647,7 +647,7 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_SPAWN_PLAYER );
 		outMsg.WriteByte( i );
 		outMsg.WriteLong( spawnIds[ i ] );
-		networkSystem->ServerSendReliableMessage( clientNum, outMsg, true );
+		networkSystem->ServerSendReliableMessage( clientNum, outMsg );
 	}
 
 	// update portals for opened doors
@@ -659,7 +659,7 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 	for ( i = 0; i < numPortals; i++ ) {
 		outMsg.WriteBits( gameRenderWorld->GetPortalState( (qhandle_t) (i+1) ) , NUM_RENDER_PORTAL_BITS );
 	}
-	networkSystem->ServerSendReliableMessage( clientNum, outMsg, true );
+	networkSystem->ServerSendReliableMessage( clientNum, outMsg );
 
 	mpGame.ServerWriteInitialReliableMessages( serverReliableSender.To( clientNum, true ), clientNum );
 }
@@ -686,7 +686,9 @@ void idGameLocal::RepeaterWriteInitialReliableMessages( int clientNum ) {
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_SPAWN_PLAYER );
 		outMsg.WriteByte( i );
 		outMsg.WriteLong( spawnIds[ i ] );
-		networkSystem->RepeaterSendReliableMessage( clientNum, outMsg );
+// jmarshall - engine has no repeater reliable channel
+		//networkSystem->RepeaterSendReliableMessage( clientNum, outMsg );
+// jmarshall end
 	}
 
 	// update portals for opened doors
@@ -698,7 +700,9 @@ void idGameLocal::RepeaterWriteInitialReliableMessages( int clientNum ) {
 	for ( i = 0; i < numPortals; i++ ) {
 		outMsg.WriteBits( gameRenderWorld->GetPortalState( (qhandle_t) (i+1) ) , NUM_RENDER_PORTAL_BITS );
 	}
-	networkSystem->RepeaterSendReliableMessage( clientNum, outMsg );
+// jmarshall - engine has no repeater reliable channel
+	//networkSystem->RepeaterSendReliableMessage( clientNum, outMsg );
+// jmarshall end
 
 	mpGame.ServerWriteInitialReliableMessages( repeaterReliableSender.To( clientNum ), ENTITYNUM_NONE );
 }
@@ -1389,7 +1393,9 @@ void idGameLocal::RepeaterProcessReliableMessage( int clientNum, const idBitMsg 
 				outMsg.WriteString( suffixed_name.c_str() );
 				outMsg.WriteString( mangled_text.c_str() );
 				outMsg.WriteString( "" );
-				networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall - engine has no repeater reliable channel
+				//networkSystem->RepeaterSendReliableMessage( -1, outMsg );
+// jmarshall end
 			}
 			break;
 		}
@@ -2106,14 +2112,16 @@ void idGameLocal::ClientProcessReliableMessage( int clientNum, const idBitMsg &m
 				break;
 		}
 
-		if ( !inhibitRepeater ) {
-			// pass it along to the connected viewers
-			if ( excludeClient == -1 ) {
-				networkSystem->RepeaterSendReliableMessage( -1, msg, IsServerDemoPlaying(), toClient );
-			} else {
-				networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg, IsServerDemoPlaying() );
-			}
-		}
+// jmarshall - engine has no repeater reliable channel
+		//if ( !inhibitRepeater ) {
+		//	// pass it along to the connected viewers
+		//	if ( excludeClient == -1 ) {
+		//		networkSystem->RepeaterSendReliableMessage( -1, msg, IsServerDemoPlaying(), toClient );
+		//	} else {
+		//		networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg, IsServerDemoPlaying() );
+		//	}
+		//}
+// jmarshall end
 
 		if ( noEffect ) {
 			return;
@@ -3173,16 +3181,18 @@ void idGameLocal::ServerSendInstanceReliableMessageExcluding( const idEntity* ow
 			continue;
 		}
 
-		networkSystem->ServerSendReliableMessage( i, msg, true );
+		networkSystem->ServerSendReliableMessage( i, msg );
 	}
 
 	if ( owner->GetInstance() == 0 ) {
 		// record this message into the demo client if server demo is active
 		// the message will also go in the server demo data through the above individual client ServerSendReliableMessage,
 		// but will be ignored on replay unless you are following that particular client
-		networkSystem->ServerSendReliableMessage( MAX_CLIENTS, msg, true );
+		networkSystem->ServerSendReliableMessage( MAX_CLIENTS, msg );
 
-		networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg );
+// jmarshall - engine has no repeater reliable channel
+		//networkSystem->RepeaterSendReliableMessageExcluding( excludeClient, msg );
+// jmarshall end
 	}
 }
 
@@ -3211,18 +3221,20 @@ void idGameLocal::ServerSendInstanceReliableMessage( const idEntity* owner, int 
 				continue;
 			}
 
-			networkSystem->ServerSendReliableMessage( i, msg, true );
+			networkSystem->ServerSendReliableMessage( i, msg );
 		}
 
 		if ( owner->GetInstance() == 0 ) {
 			// see ServerSendInstanceReliableMessageExcluding
-			networkSystem->ServerSendReliableMessage( MAX_CLIENTS, msg, true );
-			networkSystem->RepeaterSendReliableMessage( -1, msg );
+			networkSystem->ServerSendReliableMessage( MAX_CLIENTS, msg );
+// jmarshall - engine has no repeater reliable channel
+			//networkSystem->RepeaterSendReliableMessage( -1, msg );
+// jmarshall end
 		}
 	} else {
 		assert( false ); // not used in q4mp
 		if ( entities[ clientNum ] && entities[ clientNum ]->GetInstance() == owner->GetInstance() ) {
-			networkSystem->ServerSendReliableMessage( clientNum, msg, true );
+			networkSystem->ServerSendReliableMessage( clientNum, msg );
 
 			if ( owner->GetInstance() == 0 ) {
 				for ( i = 0; i < maxViewer; i++ ) {
@@ -3234,7 +3246,9 @@ void idGameLocal::ServerSendInstanceReliableMessage( const idEntity* owner, int 
 						continue;
 					}
 
-					networkSystem->RepeaterSendReliableMessage( clientNum, msg, false, i );
+// jmarshall - engine has no repeater reliable channel
+					//networkSystem->RepeaterSendReliableMessage( clientNum, msg, false, i );
+// jmarshall end
 				}
 			}
 		}
@@ -3261,7 +3275,9 @@ void idGameLocal::RepeaterAppendUnreliableMessage( int icl, const idBitMsg &msg,
 		}
 		reliable.WriteData( msg.GetData(), msg.GetSize() );
 
-		networkSystem->RepeaterSendReliableMessage( icl, reliable );
+// jmarshall - engine has no repeater reliable channel
+		//networkSystem->RepeaterSendReliableMessage( icl, reliable );
+// jmarshall end
 		return;
 	}
 

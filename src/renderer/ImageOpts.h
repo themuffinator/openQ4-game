@@ -2,9 +2,9 @@
 ===========================================================================
 
 Doom 3 BFG Edition GPL Source Code
-Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company.
+Copyright (C) 1993-2012 id Software LLC, a ZeniMax Media company. 
 
-This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").
+This file is part of the Doom 3 BFG Edition GPL Source Code ("Doom 3 BFG Edition Source Code").  
 
 Doom 3 BFG Edition Source Code is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,13 +19,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with Doom 3 BFG Edition Source Code.  If not, see <http://www.gnu.org/licenses/>.
 
-In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms.
-You should have received a copy of these additional terms immediately following the terms and
-conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.
-If not, please request a copy in writing from id Software at the address below.
+In addition, the Doom 3 BFG Edition Source Code is also subject to certain additional terms. You should have received a copy of these additional terms immediately following the terms and conditions of the GNU General Public License which accompanied the Doom 3 BFG Edition Source Code.  If not, please request a copy in writing from id Software at the address below.
 
-If you have questions concerning this license or the applicable additional terms, you may contact
-in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
+If you have questions concerning this license or the applicable additional terms, you may contact in writing id Software LLC, c/o ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 ===========================================================================
 */
@@ -58,9 +54,9 @@ enum textureFormat_t {
 	// Alpha channel only
 	//------------------------
 
-	// Alpha ends up being the same as L8A8 in our current implementation, because straight
+	// Alpha ends up being the same as L8A8 in our current implementation, because straight 
 	// alpha gives 0 for color, but we want 1.
-	FMT_ALPHA,
+	FMT_ALPHA,		
 
 	//------------------------
 	// Luminance replicates the value across RGB with a constant A of 255
@@ -98,7 +94,9 @@ enum textureFormat_t {
 	// Floating-point color image formats
 	//------------------------
 
-	FMT_RGBA16F			// 64 bpp
+	FMT_RGBA16F,		// 64 bpp
+
+	FMT_BC7				// 8 bpp
 };
 
 int BitsForFormat( textureFormat_t format );
@@ -124,7 +122,7 @@ class idImageOpts {
 public:
 	idImageOpts();
 
-	bool	operator==( const idImageOpts &opts );
+	bool	operator==( const idImageOpts & opts );
 
 	//---------------------------------------------------
 	// these determine the physical memory size and layout
@@ -138,10 +136,20 @@ public:
 	int					numLevels;		// if 0, will be 1 for NEAREST / LINEAR filters, otherwise based on size
 	bool				gammaMips;		// if true, mips will be generated with gamma correction
 	bool				readback;		// 360 specific - cpu reads back from this texture, so allocate with cached memory
+// jmarshall - MSAA
 	int					numMSAASamples;
+// jmarshall end
+
+// jmarshall - persistant images
 	bool				isPersistant;
+// jmarshall end
 };
 
+/*
+========================
+idImageOpts::idImageOpts
+========================
+*/
 ID_INLINE idImageOpts::idImageOpts() {
 	format			= FMT_NONE;
 	colorFormat		= CFM_DEFAULT;
@@ -151,11 +159,21 @@ ID_INLINE idImageOpts::idImageOpts() {
 	textureType		= TT_2D;
 	gammaMips		= false;
 	readback		= false;
-	numMSAASamples	= 0;
-	isPersistant	= false;
-}
+// jmarshall - MSAA
+	numMSAASamples = 0;
+// jmarshall end
 
-ID_INLINE bool idImageOpts::operator==( const idImageOpts &opts ) {
+// jmarshall - persistant images
+	isPersistant = false;
+// jmarshall end
+};
+
+/*
+========================
+idImageOpts::operator==
+========================
+*/
+ID_INLINE bool idImageOpts::operator==( const idImageOpts & opts ) {
 	return ( memcmp( this, &opts, sizeof( *this ) ) == 0 );
 }
 

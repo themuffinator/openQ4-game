@@ -23,11 +23,15 @@
 #endif
 
 #ifndef ID_ENABLE_CURL
-	#if !defined( _XENON )
-		#define ID_ENABLE_CURL 1
-	#else
-		#define ID_ENABLE_CURL 0
-	#endif
+	#define ID_ENABLE_CURL 0
+#endif
+
+#ifndef ID_ALLOW_D3XP
+	#define ID_ALLOW_D3XP 0
+#endif
+
+#ifndef ID_CONSOLE_LOCK
+	#define ID_CONSOLE_LOCK 0
 #endif
 
 // fake a pure client. useful to connect an all-debug client to a server
@@ -50,7 +54,7 @@
 
 #ifndef ID_ENFORCE_KEY
 #	if !defined( ID_DEDICATED ) && !defined( ID_DEMO_BUILD )
-#		define ID_ENFORCE_KEY 1
+#		define ID_ENFORCE_KEY 0
 #	else
 // twhitaker: just leave it undefined
 // TTimo: that breaks the ability to control it from command line settings with !win32 builds, but I can live with it

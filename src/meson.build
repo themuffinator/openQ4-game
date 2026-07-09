@@ -42,6 +42,22 @@ mp_module_name = 'game-mp_' + game_arch
 
 source_lister = join_paths(meson.current_source_dir(), 'buildscripts', 'list_sources.py')
 source_root = meson.current_source_dir()
+
+# framework/licensee.h (kept byte-identical with the engine repo) includes the
+# generated version header; emit it into the build dir counterpart of src so
+# the existing include path resolves it.
+version_script = join_paths(meson.project_source_root(), 'tools', 'build', 'openq4_version.py')
+run_command(
+  py,
+  version_script,
+  '--source-root',
+  meson.project_source_root(),
+  '--base-version',
+  meson.project_version(),
+  '--header-out',
+  join_paths(meson.current_build_dir(), 'openq4_version_generated.h'),
+  check : true,
+)
 release_like = ['release', 'debugoptimized', 'minsize'].contains(get_option('buildtype'))
 source_inc = include_directories('.')
 
