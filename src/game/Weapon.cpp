@@ -32,7 +32,7 @@ int rvWeapon::GetFirstPersonShadowSuppressLightId( void ) const {
 		!lights[WPLIGHT_FLASHLIGHT_WORLD].noShadows;
 	const bool flashlightActive = flashlightHandleActive && flashlightCastsShadow;
 	const int lightIndex = flashlightActive ? WPLIGHT_FLASHLIGHT : WPLIGHT_MUZZLEFLASH;
-	return lightIndex * 100 + owner->entityNumber;
+	return ( lightIndex + 1 ) * 100 + owner->entityNumber;
 }
 
 /***********************************************************************
@@ -834,7 +834,7 @@ void rvWeapon::InitLights ( void ) {
 // dluetscher: changed lights to no shadow for performance reasons
 		light->noShadows = true;
 // RAVEN END
-		light->lightId = WPLIGHT_GUI * 100 + owner->entityNumber;
+		light->lightId = ( WPLIGHT_GUI + 1 ) * 100 + owner->entityNumber;
 		light->allowLightInViewID = owner->entityNumber+1;
 		spawnArgs.GetVector ( "glightOffset", "0 0 0", guiLightOffset );
 	}
@@ -864,7 +864,7 @@ void rvWeapon::InitLights ( void ) {
 			light->end    = light->target;
 			rvNormalizeProjectedRenderLight( *light, owner ? owner->GetName() : weaponDef->GetName(), "weapon-muzzle-flash" );
 		}
-		light->lightId = WPLIGHT_MUZZLEFLASH * 100 + owner->entityNumber;
+		light->lightId = ( WPLIGHT_MUZZLEFLASH + 1 ) * 100 + owner->entityNumber;
 		light->allowLightInViewID = owner->entityNumber+1;
 		muzzleFlashTime	= SEC2MS( spawnArgs.GetFloat( "flashTime", "0.25" ) );
 		muzzleFlashEnd = 0;
@@ -876,7 +876,7 @@ void rvWeapon::InitLights ( void ) {
 	light = &lights[WPLIGHT_MUZZLEFLASH_WORLD];
 	light->suppressLightInViewID = owner->entityNumber+1;
 	light->allowLightInViewID = 0;
-	light->lightId = WPLIGHT_MUZZLEFLASH_WORLD * 100 + owner->entityNumber;
+	light->lightId = ( WPLIGHT_MUZZLEFLASH_WORLD + 1 ) * 100 + owner->entityNumber;
 
 	// flashlight	
 	light = &lights[WPLIGHT_FLASHLIGHT];
@@ -894,7 +894,7 @@ void rvWeapon::InitLights ( void ) {
 // dluetscher: added detail levels to render lights
 		light->detailLevel = DEFAULT_LIGHT_DETAIL_LEVEL;
 // dluetscher: changed lights to no shadow for performance reasons
-		light->noShadows = cvarSystem->GetCVarInteger("com_machineSpec") < 3;
+		light->noShadows = !G_DynamicLightShadowsEnabled();
 // RAVEN END
 		light->pointLight = spawnArgs.GetBool( "flashlightPointLight", "1" );
 		if ( !light->pointLight ) {
@@ -906,7 +906,7 @@ void rvWeapon::InitLights ( void ) {
 		}
 		
 		light->allowLightInViewID = owner->entityNumber+1;
-		light->lightId = WPLIGHT_FLASHLIGHT * 100 + owner->entityNumber;
+		light->lightId = ( WPLIGHT_FLASHLIGHT + 1 ) * 100 + owner->entityNumber;
 		spawnArgs.GetVector ( "flashlightViewOffset", "0 0 0", flashlightViewOffset );	
 	}
 
@@ -915,7 +915,7 @@ void rvWeapon::InitLights ( void ) {
 	light = &lights[WPLIGHT_FLASHLIGHT_WORLD];
 	light->suppressLightInViewID = owner->entityNumber+1;
 	light->allowLightInViewID = 0;
-	light->lightId = WPLIGHT_FLASHLIGHT_WORLD * 100 + owner->entityNumber; 	
+	light->lightId = ( WPLIGHT_FLASHLIGHT_WORLD + 1 ) * 100 + owner->entityNumber; 	
 }
 
 /*

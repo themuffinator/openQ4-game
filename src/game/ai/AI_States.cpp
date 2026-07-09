@@ -862,7 +862,7 @@ stateResult_t idAI::State_Burn ( const stateParms_t& parms ) {
 	}
 	
 
-	renderEntity.noShadow = true;
+	renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 
 	// Dont let the articulated figure be shot once they start burning away
 	SetCombatContents ( false );
@@ -921,7 +921,7 @@ stateResult_t idAI::State_SinkCorpse( const stateParms_t& parms ) {
 			physicsObj.SetLinearVelocity( vec3_zero );
 		}
 
-		renderEntity.noShadow = true;
+		renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 		SetCombatContents( false );
 		fl.takedamage = false;
 		GetPhysics()->DisableClip();

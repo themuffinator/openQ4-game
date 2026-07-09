@@ -1574,7 +1574,7 @@ void idAFEntity_Gibbable::SpawnGibs( const idVec3 &dir, const char *damageDefNam
 			velocity += ( i & 1 ) ? dir : -dir;
 			list[i]->GetPhysics()->SetLinearVelocity( velocity * 225.0f );
 		}
-		list[i]->GetRenderEntity()->noShadow = true;
+		list[i]->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 		list[i]->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
 // RAVEN BEGIN
 // dluetscher: reduced the gib lifetime from 4. to 1.5
@@ -1620,7 +1620,7 @@ void idAFEntity_Gibbable::Gib( const idVec3 &dir, const char *damageDefName ) {
 		if ( gameLocal.time > gameLocal.GetGibTime() ) {
 			gameLocal.SetGibTime( gameLocal.time + GIB_DELAY );
 			SpawnGibs( dir, damageDefName );
-			renderEntity.noShadow = true;
+			renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 			renderEntity.shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
 			StartSound( "snd_gibbed", SND_CHANNEL_ANY, 0, false, NULL );
 			gibbed = true;

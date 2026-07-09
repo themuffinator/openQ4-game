@@ -298,7 +298,7 @@ rvClientMoveable::Event_FadeOut
 ================
 */
 void rvClientMoveable::Event_FadeOut ( int duration ) {
-	renderEntity.noShadow = true;
+	renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 	renderEntity.shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
 	PostEventMS ( &EV_Remove, duration );	
 }

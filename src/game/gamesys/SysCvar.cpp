@@ -473,6 +473,25 @@ idCVar pm_vehicleSoundLerpScale(	"pm_vehicleSoundLerpScale",		"10",		CVAR_GAME |
 // RAVEN END
 
 idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
+idCVar g_dynamicLightShadows(		"g_dynamicLightShadows",	"-1",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_INTEGER, "gun flashlight and projectile lights request shadows: -1 = auto (high machine spec, the retail behavior), 0 = never, 1 = always", -1, 1 );
+
+bool G_DynamicLightShadowsEnabled( void ) {
+	const int mode = g_dynamicLightShadows.GetInteger();
+	if ( mode < 0 ) {
+		// retail gate: dluetscher disabled these shadows below high machine
+		// spec for stencil-volume performance
+		return cvarSystem->GetCVarInteger( "com_machineSpec" ) >= 3;
+	}
+	return mode != 0;
+}
+
+// Gibs, dissolving/sinking corpses, and fading client moveables forced
+// noShadow in the stencil era: per-chunk volumes were expensive and could
+// not follow alpha-tested dissolves. The shadow-map caster path handles
+// both, so they keep casting while it is active.
+bool G_ShadowMapCorpseShadowsEnabled( void ) {
+	return cvarSystem->GetCVarBool( "r_useShadowMap" );
+}
 
 idCVar g_skipPlayerShadowsMP(		"g_skipPlayerShadowsMP",	"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "disables all player shadows in multiplayer" );
 idCVar g_skipItemShadowsMP(			"g_skipItemShadowsMP",		"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "disables all item shadows in multiplayer" );

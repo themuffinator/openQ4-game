@@ -10707,7 +10707,7 @@ void idPlayer::Think( void ) {
 	DrawShadow( headRenderEnt );
 
 	// Never cast shadows from our first-person muzzle flash or flashlight.
-	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : rvWeapon::WPLIGHT_MUZZLEFLASH * 100 + entityNumber;
+	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : ( rvWeapon::WPLIGHT_MUZZLEFLASH + 1 ) * 100 + entityNumber;
 	renderEntity.suppressShadowInLightID = suppressShadowLightId;
 	if ( headRenderEnt ) {
  		headRenderEnt->suppressShadowInLightID = suppressShadowLightId;
@@ -13630,7 +13630,7 @@ void idPlayer::LocalClientPredictionThink( void ) {
 	DrawShadow( headRenderEnt );
 
 	// Never cast shadows from our first-person muzzle flash or flashlight.
-	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : rvWeapon::WPLIGHT_MUZZLEFLASH * 100 + entityNumber;
+	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : ( rvWeapon::WPLIGHT_MUZZLEFLASH + 1 ) * 100 + entityNumber;
 	renderEntity.suppressShadowInLightID = suppressShadowLightId;
 	if ( headRenderEnt ) {
  		headRenderEnt->suppressShadowInLightID = renderEntity.suppressShadowInLightID;
@@ -13814,7 +13814,7 @@ void idPlayer::NonLocalClientPredictionThink( void ) {
 	DrawShadow( headRenderEnt );
 
 	// Never cast shadows from our first-person muzzle flash or flashlight.
-	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : rvWeapon::WPLIGHT_MUZZLEFLASH * 100 + entityNumber;
+	const int suppressShadowLightId = weapon ? weapon->GetFirstPersonShadowSuppressLightId() : ( rvWeapon::WPLIGHT_MUZZLEFLASH + 1 ) * 100 + entityNumber;
 	renderEntity.suppressShadowInLightID = suppressShadowLightId;
 	if ( headRenderEnt ) {
  		headRenderEnt->suppressShadowInLightID = renderEntity.suppressShadowInLightID;
@@ -15001,7 +15001,7 @@ void idPlayer::ClientGib( const idVec3& dir ) {
 //		list[i]->GetPhysics()->SetLinearVelocity( velocity * ( 25.0f + ( gameLocal.random.RandomFloat() * 300.0f)));
 		list[i]->GetPhysics()->SetAngularVelocity( velocity * ( -250.0f + ( gameLocal.random.RandomFloat() * 500.0f)));
 
-		list[i]->GetRenderEntity()->noShadow = true;
+		list[i]->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 		list[i]->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
 
 		list[i]->PostEventMS( &CL_FadeOut, SEC2MS( 4.0f ), SEC2MS( 2.0f ) );
@@ -15563,15 +15563,15 @@ void idPlayer::UpdateDeathShader ( bool state_hitch ) {
 			corpseSinkStartTime = gameLocal.time;
 			deathClearContentsTime = 0;
 			doingDeathSkin = true;
-			renderEntity.noShadow = true;
+			renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 
 			if( gameLocal.isMultiplayer ) {
 				if( clientHead ) {
-					clientHead.GetEntity()->GetRenderEntity()->noShadow = true;
+					clientHead.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			} else {
 				if( head ) {
-					head.GetEntity()->GetRenderEntity()->noShadow = true;
+					head.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			}
 
@@ -15590,12 +15590,12 @@ void idPlayer::UpdateDeathShader ( bool state_hitch ) {
 			if( gameLocal.isMultiplayer ) {
 				if( clientHead ) {
 					clientHead.GetEntity()->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f - 2.0f;
-					clientHead.GetEntity()->GetRenderEntity()->noShadow = true;
+					clientHead.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			} else {
 				if( head ) {
 					head.GetEntity()->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f - 2.0f;
-					head.GetEntity()->GetRenderEntity()->noShadow = true;
+					head.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			}
 		} else {
@@ -15603,16 +15603,16 @@ void idPlayer::UpdateDeathShader ( bool state_hitch ) {
 			if( gameLocal.isMultiplayer ) {
 				if( clientHead ) {
 					clientHead.GetEntity()->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
-					clientHead.GetEntity()->GetRenderEntity()->noShadow = true;
+					clientHead.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			} else {
 				if( head ) {
 					head.GetEntity()->GetRenderEntity()->shaderParms[ SHADERPARM_TIME_OF_DEATH ] = gameLocal.time * 0.001f;
-					head.GetEntity()->GetRenderEntity()->noShadow = true;
+					head.GetEntity()->GetRenderEntity()->noShadow = !G_ShadowMapCorpseShadowsEnabled();
 				}
 			}
 		}
-		renderEntity.noShadow = true;
+		renderEntity.noShadow = !G_ShadowMapCorpseShadowsEnabled();
 		UpdateVisuals();
 	}
 }
