@@ -107,6 +107,7 @@ protected:
 	idFile *				file;
 
 	idList<const idClass *>	objects;
+	idHashIndex				objectHash;
 	int						openQ4SaveGameNextSyncId;
 	bool					openQ4SaveGameSyncMarkersEnabled;
 

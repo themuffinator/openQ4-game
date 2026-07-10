@@ -42,6 +42,26 @@ file be unloadable in some way (for example, due to script changes).
 static const int MAX_SAVEGAME_OBJECTS = MAX_GENTITIES + MAX_CENTITIES + 4096;
 static const int MAX_SAVEGAME_DICT_ENTRIES = 16384;
 
+static int SaveGame_ObjectHashKey( const idClass *obj ) {
+	const size_t value = reinterpret_cast<size_t>( obj );
+	return static_cast<int>( value ^ ( value >> 4 ) ^ ( value >> ( sizeof( value ) * 4 ) ) );
+}
+
+static int SaveGame_FindObjectIndex( const idList<const idClass *> &objects, const idHashIndex &objectHash, const idClass *obj ) {
+	if ( obj == NULL ) {
+		return 0;
+	}
+
+	const int key = SaveGame_ObjectHashKey( obj );
+	for ( int index = objectHash.First( key ); index >= 0; index = objectHash.Next( index ) ) {
+		if ( index < objects.Num() && objects[index] == obj ) {
+			return index;
+		}
+	}
+
+	return -1;
+}
+
 static bool SaveGame_IsValidRenderBounds( const idBounds &bounds ) {
 	for ( int i = 0; i < 3; i++ ) {
 		if ( FLOAT_IS_NAN( bounds[0][i] ) || FLOAT_IS_NAN( bounds[1][i] ) ) {
@@ -94,6 +114,7 @@ idSaveGame::idSaveGame( idFile *savefile ) {
 	// Put NULL at the start of the list so we can skip over it.
 	objects.Clear();
 	objects.Append( NULL );
+	objectHash.Clear();
 }
 
 /*
@@ -147,6 +168,7 @@ void idSaveGame::Close( void ) {
 	WriteSaveGameFooter( numObjects );
 
 	objects.Clear();
+	objectHash.Clear();
 
 #ifdef ID_DEBUG_MEMORY
 // RAVEN BEGIN
@@ -206,7 +228,11 @@ void idSaveGame::AddObject( const idClass *obj ) {
 	if ( obj == NULL ) {
 		return;
 	}
-	objects.AddUnique( obj );
+	if ( SaveGame_FindObjectIndex( objects, objectHash, obj ) >= 0 ) {
+		return;
+	}
+	const int index = objects.Append( obj );
+	objectHash.Add( SaveGame_ObjectHashKey( obj ), index );
 	if ( objects.Num() - 1 > MAX_SAVEGAME_OBJECTS ) {
 		common->Error( "idSaveGame::AddObject: too many savegame objects (%d, max %d)", objects.Num() - 1, MAX_SAVEGAME_OBJECTS );
 	}
@@ -452,7 +478,7 @@ idSaveGame::WriteObject
 void idSaveGame::WriteObject( const idClass *obj ) {
 	int index;
 
-	index = objects.FindIndex( obj );
+	index = SaveGame_FindObjectIndex( objects, objectHash, obj );
 	if ( index < 0 ) {
 		gameLocal.DPrintf( "idSaveGame::WriteObject - WriteObject FindIndex failed\n" );
 
