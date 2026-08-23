@@ -96,6 +96,26 @@ typedef struct {
 	bool				legacyFallbackMissing;
 } pbrMaterialInfo_t;
 
+// An authored specular probe is renderer metadata carried by a light material.
+// The light still supplies the spatial volume; this block supplies only the
+// immutable image and ranking/blending policy.  Keeping it out of renderLight_t
+// preserves the game-module, save-game, demo, and network contracts.
+typedef enum {
+	SPECULAR_PROBE_CUBE_NONE = 0,
+	SPECULAR_PROBE_CUBE_NATIVE,
+	SPECULAR_PROBE_CUBE_CAMERA
+} specularProbeCubeConvention_t;
+
+typedef struct {
+	bool						enabled;
+	idImage *				cubeImage;
+	specularProbeCubeConvention_t cubeConvention;
+	float					tint[3];
+	float					intensity;
+	float					blendFraction;
+	int						priority;
+} specularProbeMaterialInfo_t;
+
 // moved from image.h for default parm
 typedef enum {
 	TF_LINEAR,
@@ -565,6 +585,11 @@ public:
 	bool				HasPBR(void) const { return pbrInfo.enabled; }
 	const pbrMaterialInfo_t& GetPBRInfo(void) const { return pbrInfo; }
 
+	// openQ4-authored light-material metadata. Classic material stages and
+	// every public render-light/game ABI remain unchanged.
+	bool				HasSpecularProbe(void) const { return specularProbeInfo.enabled && !TestMaterialFlag( MF_DEFAULTED ); }
+	const specularProbeMaterialInfo_t& GetSpecularProbeInfo(void) const { return specularProbeInfo; }
+
 	// Retarget a parsed stage without rewriting authored declaration text.
 	// Runtime-generated images (for example the scalable console font atlas)
 	// must not change the declaration checksum used by multiplayer handshakes.
@@ -863,6 +888,7 @@ private:
 	void				ParseStage(idLexer& src, const textureRepeat_t trpDefault = TR_REPEAT);
 	bool				ParsePBRBlock(idLexer& src, const textureRepeat_t trpDefault);
 	bool				ParsePBRImage(idLexer& src, pbrMaterialTexture_t& target, const int usage, const textureRepeat_t trpDefault);
+	bool				ParseSpecularProbeBlock(idLexer& src);
 	void				AddPBRLegacyFallbackStages(const textureRepeat_t trpDefault);
 	void				ParseDeform(idLexer& src);
 	void				ParseDecalInfo(idLexer& src);
@@ -970,12 +996,14 @@ private:
 	bool				suppressInSubview;
 	bool				portalSky;
 	pbrMaterialInfo_t	pbrInfo;
+	specularProbeMaterialInfo_t specularProbeInfo;
 	int					refCount;
 };
 
 // Parser-free regression hook for custom GLSL receiver compatibility helpers.
 bool R_MaterialCustomGLSLReceiverHelperSelfTest( void );
 bool R_PBRMaterialParserSelfTest( void );
+bool R_SpecularProbeMaterialParserSelfTest( void );
 
 typedef idList<const idMaterial*> idMatList;
 
