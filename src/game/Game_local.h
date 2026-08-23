@@ -392,6 +392,7 @@ struct rvmGameRender_t {
 	idRenderTexture* forwardRenderPassRT;
 	idRenderTexture* postProcessRT[3];
 	idRenderTexture* forwardRenderPassResolvedRT;
+	idRenderTexture* temporalHistoryRT[2];
 	const idMaterial* noPostProcessMaterial;
 	const idMaterial* casPostProcessMaterial;
 	const idMaterial* blurPostProcessMaterial;
@@ -406,6 +407,11 @@ struct rvmGameRender_t {
 	int forwardRenderSamples;
 	int renderTargetWidth;
 	int renderTargetHeight;
+	int temporalHistoryWidth;
+	int temporalHistoryHeight;
+	int temporalHistoryReadIndex;
+	unsigned int temporalHistoryGeneration;
+	bool temporalHistoryValid;
 	int videoRestartCount;
 	int postAAWarningState;
 };

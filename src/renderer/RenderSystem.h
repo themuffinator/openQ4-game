@@ -365,6 +365,26 @@ typedef struct renderGpuFrameTiming_s {
 	unsigned long long	resetCount;
 } renderGpuFrameTiming_t;
 
+// Frame-latched presentation dimensions shared with the game modules. The
+// 3D scene and its post-process chain render at sceneWidth/sceneHeight; final
+// composition and all game/UI drawing remain at outputWidth/outputHeight.
+// Keep this structure POD because idRenderSystem crosses both renderer- and
+// game-module boundaries.
+typedef struct renderPresentationState_s {
+	int				frameNumber;
+	int				outputWidth;
+	int				outputHeight;
+	int				sceneWidth;
+	int				sceneHeight;
+	int				effectiveScalePercent;
+	unsigned int		historyGeneration;
+	bool				dynamicResolutionRequested;
+	bool				dynamicResolutionActive;
+	bool				temporalAARequested;
+	bool				captureFrozen;
+	bool				captureForcedNative;
+} renderPresentationState_t;
+
 class idRenderWorld;
 
 
@@ -673,6 +693,22 @@ public:
 	// Invalidates delayed samples at a non-renderer session discontinuity. The
 	// renderer owns the generation change and backend query retirement.
 	virtual void			ResetGpuFrameTiming( const char *reason ) = 0;
+
+	// Returns the immutable scene/output extent selected at BeginFrame. Before
+	// the first frame, output dimensions fall back to the active video mode.
+	virtual void			GetPresentationState( renderPresentationState_t &state ) const = 0;
+
+	// Queues the backend-neutral temporal presentation resolve. Scene colour
+	// and depth remain scene-sized; history targets are native output-sized.
+	// historyReadTarget may be NULL when seeding or invalidating history, and
+	// both history targets may be NULL to request a jitter-recentered spatial
+	// present. Returns false without queuing only when neither safe route can be
+	// represented, so the game can retain its existing SMAA/spatial path.
+	virtual bool			ResolveTemporalPresentation(
+		idRenderTexture *sceneColorTarget,
+		idRenderTexture *sceneDepthTarget,
+		idRenderTexture *historyReadTarget,
+		idRenderTexture *historyWriteTarget ) = 0;
 };
 
 extern idRenderSystem *		renderSystem;

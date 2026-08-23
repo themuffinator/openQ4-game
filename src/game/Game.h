@@ -690,7 +690,9 @@ extern rvGameLog *				gameLog;
 //     until the engine declaration manager has released module-owned decls
 // 44: shared idFile/idFileSystem ABI adds engine-owned memory staging,
 //     semantic preload records, and source-authoritative generated caches
-const int GAME_API_VERSION		= 44;
+// 45: shared idRenderSystem presentation state and temporal resolve command
+//     for scene-resolution rendering with native-resolution composition/UI
+const int GAME_API_VERSION		= 45;
 
 struct gameImport_t {
 

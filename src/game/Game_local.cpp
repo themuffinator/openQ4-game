@@ -607,6 +607,8 @@ void idGameLocal::Clear( void ) {
 	gameRender.postProcessRT[1] = NULL;
 	gameRender.postProcessRT[2] = NULL;
 	gameRender.forwardRenderPassResolvedRT = NULL;
+	gameRender.temporalHistoryRT[0] = NULL;
+	gameRender.temporalHistoryRT[1] = NULL;
 	gameRender.noPostProcessMaterial = NULL;
 	gameRender.casPostProcessMaterial = NULL;
 	gameRender.blurPostProcessMaterial = NULL;
@@ -621,6 +623,11 @@ void idGameLocal::Clear( void ) {
 	gameRender.forwardRenderSamples = 0;
 	gameRender.renderTargetWidth = 0;
 	gameRender.renderTargetHeight = 0;
+	gameRender.temporalHistoryWidth = 0;
+	gameRender.temporalHistoryHeight = 0;
+	gameRender.temporalHistoryReadIndex = 0;
+	gameRender.temporalHistoryGeneration = 0;
+	gameRender.temporalHistoryValid = false;
 	gameRender.videoRestartCount = 0;
 	gameRender.postAAWarningState = 0;
 // RAVEN BEGIN
