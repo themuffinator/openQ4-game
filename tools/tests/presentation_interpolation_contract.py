@@ -399,9 +399,15 @@ def check_source_root(source_root: str) -> dict[str, str]:
         "void idGameLocal::SamplePresentationEntityPoses( void )",
         context,
     )
-    require(sample_sweep, "spawnedEntities.Next()", f"{context} complete candidate sweep")
+    require(sample_sweep, "skipCinematic", f"{context} hidden fast-forward bypass")
+    require(sample_sweep, "ClearPresentationEntityPoses();", f"{context} disabled/skip handback")
+    require(sample_sweep, "presentationEntities.Next()", f"{context} previous-member cleanup sweep")
+    require(sample_sweep, "activeEntities.Next()", f"{context} changed-candidate sweep")
+    require(sample_sweep, "GetTeamMaster()", f"{context} active physics-team ownership")
+    require(sample_sweep, "GetNextTeamEntity()", f"{context} bound team-member coverage")
+    require(sample_sweep, "presentationNode.InList()", f"{context} duplicate sample guard")
+    reject(sample_sweep, "spawnedEntities.Next()", f"{context} no static-map full sweep")
     require(sample_sweep, "g_presentationInterpolation", f"{context} user control")
-    require(sample_sweep, "DisablePresentationPose();", f"{context} disabled path forgets its samples")
     require(sample_sweep, "presentationNode.AddToEnd( presentationEntities );", f"{context} moving entities are listed")
     reject(sample_sweep, "Think(", f"{context} sampling runs no gameplay")
 

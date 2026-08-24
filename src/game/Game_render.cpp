@@ -966,6 +966,13 @@ static renderPresentationState_t openQ4_GetPresentationState( void ) {
 	return state;
 }
 
+static bool openQ4_AdvancedScreenSpaceRequested( void ) {
+	return cvarSystem->GetCVarBool( "r_rendererModernQuality" )
+		&& ( cvarSystem->GetCVarBool( "r_rendererFroxelVolumetrics" )
+			|| cvarSystem->GetCVarBool( "r_rendererSSR" )
+			|| cvarSystem->GetCVarBool( "r_rendererSSGI" ) );
+}
+
 static idRenderTexture* openQ4_CreateTemporalHistoryRenderTarget(
 		int historyIndex, int targetWidth, int targetHeight ) {
 	if ( targetWidth <= 0 || targetHeight <= 0 ) {
@@ -1071,15 +1078,16 @@ static bool openQ4_ResolveTemporalPresentation(
 	// The primary view can invalidate history after the frame state was first
 	// queried (for example, on a camera cut), so consume a fresh generation.
 	const renderPresentationState_t presentation = openQ4_GetPresentationState();
-	if ( !presentation.temporalAARequested
-			|| presentation.captureFrozen
-			|| presentation.captureForcedNative
+	const bool screenSpaceRequested = openQ4_AdvancedScreenSpaceRequested();
+	const bool temporalHistoryEligible = presentation.temporalAARequested
+		&& !presentation.captureFrozen && !presentation.captureForcedNative;
+	if ( ( !temporalHistoryEligible && !screenSpaceRequested )
 			|| sceneColorTarget == NULL || sceneDepthTarget == NULL ) {
 		return false;
 	}
 
-	const bool historyResourcesReady =
-		openQ4_SynchronizeTemporalHistory( gameRender, presentation );
+	const bool historyResourcesReady = temporalHistoryEligible
+		&& openQ4_SynchronizeTemporalHistory( gameRender, presentation );
 	const int historyWriteIndex = gameRender.temporalHistoryReadIndex ^ 1;
 	idRenderTexture *historyReadTarget = historyResourcesReady
 		&& gameRender.temporalHistoryValid
@@ -1096,8 +1104,10 @@ static bool openQ4_ResolveTemporalPresentation(
 		return false;
 	}
 
-	gameRender.temporalHistoryGeneration = presentation.historyGeneration;
-	if ( historyResourcesReady ) {
+	if ( temporalHistoryEligible ) {
+		gameRender.temporalHistoryGeneration = presentation.historyGeneration;
+	}
+	if ( temporalHistoryEligible && historyResourcesReady ) {
 		gameRender.temporalHistoryReadIndex = historyWriteIndex;
 		gameRender.temporalHistoryValid = true;
 	} else {
@@ -1422,9 +1432,12 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	LogPostAASchedule( postAASchedule, gameRender.smaaAvailable );
 
 	const bool useSMAA = PostAAModeUsesSMAA( postAASchedule.effectiveMode );
-	const bool temporalResolveCandidate = presentation.temporalAARequested
-		&& !presentation.captureFrozen
-		&& !presentation.captureForcedNative
+	const bool screenSpaceRequested = openQ4_AdvancedScreenSpaceRequested();
+	const bool temporalResolveCandidate =
+		( ( presentation.temporalAARequested
+			&& !presentation.captureFrozen
+			&& !presentation.captureForcedNative )
+			|| screenSpaceRequested )
 		&& gameRender.postProcessRT[1] != NULL;
 
 	const bool canUseFastNoPost =
@@ -1433,7 +1446,8 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		!blurEnabled &&
 		!wantsSMAA &&
 		!wantsCAS &&
-		!presentation.temporalAARequested;
+		!presentation.temporalAARequested &&
+		!screenSpaceRequested;
 
 	if ( canUseFastNoPost ) {
 		if ( g_renderFastNoPostDirect.GetBool() &&
@@ -1478,7 +1492,7 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	renderSystem->ResolveMSAA(
 		gameRender.forwardRenderPassRT,
 		gameRender.forwardRenderPassResolvedRT,
-		blurEnabled || presentation.temporalAARequested
+		blurEnabled || presentation.temporalAARequested || screenSpaceRequested
 			|| cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
 
 	// Temporal AA consumes the pre-SMAA scene. Keep the mature SMAA schedule

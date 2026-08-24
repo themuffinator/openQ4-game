@@ -9148,31 +9148,56 @@ void idGameLocal::ClearPresentationEntityPoses( void ) {
 ================
 idGameLocal::SamplePresentationEntityPoses
 
-Take the authoritative 60 Hz transform sample for everything the renderer can
-see, and rebuild the list of entities that moved this tic.  Run once per game
-frame, after all thinking and pushing is finished.
+Take the authoritative 60 Hz transform sample for entities that can have
+changed this tic. Keep last frame's presentation members until they settle so
+their authoritative pose is restored, then admit newly active movers. Run once
+per game frame, after all thinking and pushing is finished.
 ================
 */
 void idGameLocal::SamplePresentationEntityPoses( void ) {
 	idEntity *ent;
 	idEntity *next;
 
-	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
-		next = ent->presentationNode.Next();
-		ent->presentationNode.Remove();
-	}
-
-	if ( !g_presentationInterpolation.GetBool() || GetDemoState() == DEMO_PLAYING || IsTimeDemo() ) {
-		for ( ent = spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
-			ent->DisablePresentationPose();
-		}
+	// Cinematic fast-forward can execute many thousands of simulation tics in a
+	// single host frame. None of those intermediate poses is presented. Avoid a
+	// full spawned-entity walk for every skipped tic and discard any pose that
+	// was pushed by the last visible frame.
+	if ( skipCinematic || !g_presentationInterpolation.GetBool() || GetDemoState() == DEMO_PLAYING || IsTimeDemo() ) {
+		ClearPresentationEntityPoses();
 		return;
 	}
 
-	for ( ent = spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
-		if ( ent->SamplePresentationPose() ) {
-			ent->presentationNode.AddToEnd( presentationEntities );
+	// A member that moved or animated last frame must be sampled once more even
+	// if it deactivated, otherwise its final interpolated pose could remain in
+	// the render world. Remove it only after SamplePresentationPose restores or
+	// rejects it.
+	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
+		next = ent->presentationNode.Next();
+		if ( !ent->SamplePresentationPose() ) {
+			ent->presentationNode.Remove();
 		}
+	}
+
+	// Active entities are the authoritative roots that can move, animate, or
+	// update visuals this tic. An active physics team master also moves bound
+	// team members from its own RunPhysics walk, even when those members have no
+	// independent think flags, so include that bounded chain. Active slaves are
+	// skipped when their active master already owns the chain; an independently
+	// active slave of an inactive master still samples itself.
+	for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
+		idEntity *teamMaster = ent->GetTeamMaster();
+		if ( teamMaster != NULL && teamMaster != ent && teamMaster->IsActive() ) {
+			continue;
+		}
+		idEntity *candidate = ent;
+		do {
+			if ( !candidate->presentationNode.InList()
+					&& candidate->SamplePresentationPose() ) {
+				candidate->presentationNode.AddToEnd( presentationEntities );
+			}
+			candidate = teamMaster == ent
+				? candidate->GetNextTeamEntity() : NULL;
+		} while ( candidate != NULL );
 	}
 }
 
