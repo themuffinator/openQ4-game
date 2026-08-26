@@ -997,6 +997,11 @@ private:
 	bool				portalSky;
 	pbrMaterialInfo_t	pbrInfo;
 	specularProbeMaterialInfo_t specularProbeInfo;
+	// parse-time structural fact: some stage carries an active-able customLighting
+	// GLSL program (newStage with customLighting + glslProgram). Lets the hot
+	// per-surface interaction and shadow-receiver chain scans early-out without
+	// walking every stage; register conditions are still evaluated when set.
+	bool				hasCustomGLSLLightingStage;
 	int					refCount;
 };
 
