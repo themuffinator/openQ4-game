@@ -692,7 +692,9 @@ extern rvGameLog *				gameLog;
 //     semantic preload records, and source-authoritative generated caches
 // 45: shared idRenderSystem presentation state and temporal resolve command
 //     for scene-resolution rendering with native-resolution composition/UI
-const int GAME_API_VERSION		= 45;
+// 46: common exposes a transient game-owned time scale independently of the
+//     public timescale CVar
+const int GAME_API_VERSION		= 46;
 
 struct gameImport_t {
 
