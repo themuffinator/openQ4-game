@@ -4588,6 +4588,23 @@ void idPlayer::UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt
 
 /*
 ===============
+idPlayer::UpdateZoomGuiViewState
+===============
+*/
+void idPlayer::UpdateZoomGuiViewState( void ) {
+	if ( weapon == NULL || weapon->GetZoomGui() == NULL ) {
+		return;
+	}
+
+	// Scope markings are presentation state. At refresh rates above the game
+	// tick, use the interpolated camera that is actually being drawn instead of
+	// the weapon's last authoritative simulation axis.
+	const idMat3 &presentedViewAxis = renderView != NULL ? renderView->viewaxis : firstPersonViewAxis;
+	weapon->GetZoomGui()->SetStateFloat( "playerYaw", presentedViewAxis.ToAngles().yaw );
+}
+
+/*
+===============
 idPlayer::DrawHUD
 ===============
 */
@@ -4613,6 +4630,8 @@ void idPlayer::DrawHUD( idUserInterface *_hud ) {
 	if ( disableHud || influenceActive != INFLUENCE_NONE || privateCameraView || !_hud || !g_showHud.GetBool() ) {
 		return;
 	}
+
+	UpdateZoomGuiViewState();
 
 	{
 		enum yawDebugField_t {

@@ -4842,7 +4842,10 @@ void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
 		common->Printf( "AutoExecAfterMapLoad: executed %s at %d ms\n",
 			execPath,
 			nowMs - autoExecAfterMapLoadStartTime );
-		cmdSystem->BufferCommandArgs( CMD_EXEC_NOW, execArgs );
+		// Draw() also services this hook. Executing the cfg synchronously from
+		// there can make commands such as screenshot recursively enter the
+		// session render path before the current frame has completed.
+		cmdSystem->BufferCommandArgs( CMD_EXEC_APPEND, execArgs );
 	} else {
 		common->Warning( "AutoExecAfterMapLoad: skipped unsafe cfg path '%s'", execPath ? execPath : "" );
 	}

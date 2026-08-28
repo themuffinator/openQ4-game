@@ -530,6 +530,7 @@ public:
 	
 	void					DrawShadow( renderEntity_t *headRenderEnt );
 	void					UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt );
+	void					UpdateZoomGuiViewState( void );
 	void					DrawHUD( idUserInterface *hud );
 	void					StartRadioChatter ( void );
 	void					StopRadioChatter ( void );
