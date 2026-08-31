@@ -3046,7 +3046,7 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( (int &)previousWaterLevel );
 	savefile->ReadInt( previousWaterType );
 	nextLiquidSurfaceSoundTime = 0;
-	if ( savefile->HasOpenQ4PlayerLiquidSaveFields() ) {
+	if ( savefile->HasOpenQ4PlayerLiquidSoundSaveField() ) {
 		savefile->ReadInt( nextLiquidSurfaceSoundTime );
 	}
 	savefile->ReadInt( nextLiquidDamageTime );

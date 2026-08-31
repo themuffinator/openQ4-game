@@ -1808,7 +1808,7 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat( frametime );
 	savefile->ReadFloat( playerSpeed );
 	swimSpeed = 0.0f;
-	if ( savefile->HasOpenQ4PlayerLiquidSaveFields() ) {
+	if ( savefile->HasOpenQ4PlayerSwimSpeedSaveField() ) {
 		savefile->ReadFloat( swimSpeed );
 	}
 	savefile->ReadVec3( viewForward );

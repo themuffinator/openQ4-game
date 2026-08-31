@@ -213,9 +213,11 @@ public:
 	bool					IsOpenQ4SaveGameCompatible( void ) const;
 	const char *			GetOpenQ4SaveGameCompatibilityError( void ) const;
 	const char *			GetOpenQ4SaveGameCompatibilityStamp( void ) const;
-	bool					HasOpenQ4PlayerLiquidSaveFields( void ) const;
+	bool					HasOpenQ4PlayerSwimSpeedSaveField( void ) const;
+	bool					HasOpenQ4PlayerLiquidSoundSaveField( void ) const;
 
 private:
+	bool					HasOpenQ4PlayerLiquidSaveFieldForBuild( int firstBuildWithField ) const;
 	int						buildNumber;
 	int						openQ4SaveGameCompatibilityVersion;
 	int						openQ4SaveGameCompatibilitySourceFileCount;
