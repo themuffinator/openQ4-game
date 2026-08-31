@@ -1736,6 +1736,51 @@ void Cmd_GotoLevelshot_f( const idCmdArgs &args ) {
 
 /*
 =================
+Cmd_BenchmarkViewSweep_f
+
+Starts a deterministic yaw pan of the local player's view.  Automated
+performance captures use this to sweep a scene without synthesizing
+operating-system mouse or keyboard input.
+=================
+*/
+void Cmd_BenchmarkViewSweep_f( const idCmdArgs &args ) {
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	if ( !player || !gameLocal.CheatsOk() ) {
+		return;
+	}
+
+	// Console text is untrusted: clamp both arguments to ranges the sweep can
+	// actually represent so a typo cannot produce a NaN yaw or a sweep that
+	// never ends.
+	const float MAX_SWEEP_DEGREES = 36000.0f;
+	const int MAX_SWEEP_DURATION_MS = 600000;
+
+	float degrees = 360.0f;
+	int durationMS = 10000;
+
+	if ( args.Argc() > 1 ) {
+		degrees = atof( args.Argv( 1 ) );
+		if ( FLOAT_IS_NAN( degrees ) || FLOAT_IS_INF( degrees ) ) {
+			degrees = 0.0f;
+		}
+		degrees = idMath::ClampFloat( -MAX_SWEEP_DEGREES, MAX_SWEEP_DEGREES, degrees );
+	}
+	if ( args.Argc() > 2 ) {
+		durationMS = idMath::ClampInt( 0, MAX_SWEEP_DURATION_MS, atoi( args.Argv( 2 ) ) );
+	}
+
+	if ( durationMS <= 0 ) {
+		player->StopBenchmarkViewSweep();
+		gameLocal.Printf( "benchmarkViewSweep: stopped\n" );
+		return;
+	}
+
+	player->StartBenchmarkViewSweep( degrees, durationMS );
+	gameLocal.Printf( "benchmarkViewSweep: start, %.1f degrees over %d ms\n", degrees, durationMS );
+}
+
+/*
+=================
 Cmd_SetViewpos_f
 =================
 */
@@ -4081,6 +4126,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "getviewpos",			Cmd_GetViewpos_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"prints the current view position" );
 	cmdSystem->AddCommand( "viewpos",				Cmd_Viewpos_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"prints the current view origin and angles" );
 	cmdSystem->AddCommand( "setviewpos",			Cmd_SetViewpos_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"sets the current view position" );
+	cmdSystem->AddCommand( "benchmarkViewSweep",	Cmd_BenchmarkViewSweep_f,	CMD_FL_GAME|CMD_FL_CHEAT,	"pans the view a given number of degrees over a given number of milliseconds" );
 	cmdSystem->AddCommand( "mccLandingBorkedLiftTest", Cmd_MccLandingBorkedLiftTest_f, CMD_FL_GAME|CMD_FL_CHEAT, "sets up the MCC Landing broken lift repro" );
 	cmdSystem->AddCommand( "mccLandingBorkedLiftState", Cmd_MccLandingBorkedLiftState_f, CMD_FL_GAME|CMD_FL_CHEAT, "prints MCC Landing broken lift player contact state" );
 	cmdSystem->AddCommand( "process1IntroLiftDeathTest", Cmd_Process1IntroLiftDeathTest_f, CMD_FL_GAME|CMD_FL_CHEAT, "sets up the process1 intro lift death repro" );

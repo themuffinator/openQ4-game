@@ -4502,6 +4502,10 @@ idGameLocal::RunFrame
 		player = GetLocalPlayer();
 		const bool airDefense1SkipProbeActive = !isMultiplayer && g_airdefense1SkipProbe.GetBool() && openQ4_IsAirDefense1SkipProbeMap( *this );
 		const bool airDefense1SkipProbeProfileActive = airDefense1SkipProbeActive && g_airdefense1SkipProbeProfile.GetBool();
+		// The per-section timers below were written for the airdefense1 skip probe.
+		// They are equally useful for ordinary slow-frame triage, so g_frametime
+		// turns them on too; the probe keeps its own accumulation separate.
+		const bool profileFrameSections = ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) || g_frametime.GetBool();
 		if ( airDefense1SkipProbeActive ) {
 			const int wallTimeNow = Sys_Milliseconds();
 			const char *cameraName = openQ4_AirDefense1SkipProbeCameraName( camera );
@@ -4706,7 +4710,7 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 		random.RandomInt();
 
 		if ( player && !( inCinematic && skipCinematic ) ) {
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeSectionStartMs = Sys_Milliseconds();
 			}
 			// update the renderview so that any gui videos play from the right frame
@@ -4714,7 +4718,7 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 			if ( view ) {
 				gameRenderWorld->SetRenderView( view );
 			}
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeViewSetupMs += Sys_Milliseconds() - probeSectionStartMs;
 			}
 		}
@@ -4728,11 +4732,11 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 		// nmckenzie: Let AI System stuff update itself.
 		if ( !isMultiplayer ) {
 #ifndef _MPBETA
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeSectionStartMs = Sys_Milliseconds();
 			}
 			aiManager.RunFrame();
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeAiFrameMs += Sys_Milliseconds() - probeSectionStartMs;
 			}
 #endif // !_MPBETA
@@ -4745,49 +4749,49 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 
 		// create a merged pvs for all players
 		// do this before we process events, which may rely on PVS info
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeSectionStartMs = Sys_Milliseconds();
 		}
 		SetupPlayerPVS();
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probePvsMs += Sys_Milliseconds() - probeSectionStartMs;
 		}
 
 		// process events on the server
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeSectionStartMs = Sys_Milliseconds();
 		}
 		ServerProcessEntityNetworkEventQueue();
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeNetEventQueueMs += Sys_Milliseconds() - probeSectionStartMs;
 		}
 
 		// update our gravity vector if needed.
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeSectionStartMs = Sys_Milliseconds();
 		}
 		UpdateGravity();
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeGravityMs += Sys_Milliseconds() - probeSectionStartMs;
 		}
 
 		if ( isLastPredictFrame ) {
 			// jscott: effect system uses gravity and the player PVS
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeSectionStartMs = Sys_Milliseconds();
 			}
 			bse->StartFrame();
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeBseStartMs += Sys_Milliseconds() - probeSectionStartMs;
 			}
 		}
 
 		// sort the active entity list
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeSectionStartMs = Sys_Milliseconds();
 		}
 		SortActiveEntityList();
-		if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+		if ( profileFrameSections ) {
 			probeSortActiveMs += Sys_Milliseconds() - probeSectionStartMs;
 		}
 
@@ -4922,12 +4926,12 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 
 		if ( isLastPredictFrame ) {
 			// jscott: effect system uses gravity and the player PVS
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeSectionStartMs = Sys_Milliseconds();
 			}
 			bse->EndFrame();
 			CheckAutoMachinegunImpact();
-			if ( airDefense1SkipProbeProfileActive && s_openq4AirDefense1SkipProbe.skipRequested ) {
+			if ( profileFrameSections ) {
 				probeBseEndMs += Sys_Milliseconds() - probeSectionStartMs;
 			}
 
@@ -4977,9 +4981,11 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 
 		// display how long it took to calculate the current game frame
 		if ( g_frametime.GetBool() ) {
-			Printf( "game %d: all:%.1f th:%.1f ev:%.1f %d ents \n",
+			Printf( "game %d: all:%.1f th:%.1f ev:%.1f %d ents view:%.0f ai:%.0f pvs:%.0f netev:%.0f grav:%.0f bseStart:%.0f sort:%.0f bseEnd:%.0f\n",
 				time, timer_think.Milliseconds() + timer_events.Milliseconds(),
-				timer_think.Milliseconds(), timer_events.Milliseconds(), num );
+				timer_think.Milliseconds(), timer_events.Milliseconds(), num,
+				probeViewSetupMs, probeAiFrameMs, probePvsMs, probeNetEventQueueMs,
+				probeGravityMs, probeBseStartMs, probeSortActiveMs, probeBseEndMs );
 		}
 
 		// build the return value

@@ -1878,6 +1878,12 @@ idPlayer::idPlayer() {
 
 	centerView.Init( 0, 0, 0, 0 );
 	fxFov					= false;
+	viewSweepActive			= false;
+	viewSweepStartTime		= 0;
+	viewSweepDurationMS		= 0;
+	viewSweepDegrees		= 0.0f;
+	viewSweepStartYaw		= 0.0f;
+	viewSweepPitch			= 0.0f;
 
 	influenceFov			= 0;
 	influenceActive			= 0;
@@ -2268,6 +2274,12 @@ void idPlayer::Init( void ) {
 	zoomed					= false;
 	centerView.Init( 0, 0, 0, 0 );
 	fxFov					= false;
+	viewSweepActive			= false;
+	viewSweepStartTime		= 0;
+	viewSweepDurationMS		= 0;
+	viewSweepDegrees		= 0.0f;
+	viewSweepStartYaw		= 0.0f;
+	viewSweepPitch			= 0.0f;
 
 	influenceFov			= 0;
 	influenceActive			= 0;
@@ -8944,6 +8956,77 @@ void idPlayer::SetViewAngles( const idAngles &angles ) {
 idPlayer::UpdateViewAngles
 ================
 */
+/*
+==============
+idPlayer::StartBenchmarkViewSweep
+
+Begins a deterministic, game-time driven yaw pan from the current view.
+Automated performance captures use this instead of synthesized mouse input,
+so the same sweep is reproduced regardless of host frame rate.
+==============
+*/
+void idPlayer::StartBenchmarkViewSweep( float degrees, int durationMS ) {
+	if ( durationMS <= 0 ) {
+		StopBenchmarkViewSweep();
+		return;
+	}
+
+	viewSweepActive			= true;
+	viewSweepStartTime		= gameLocal.time;
+	viewSweepDurationMS		= durationMS;
+	viewSweepDegrees		= degrees;
+	viewSweepStartYaw		= viewAngles.yaw;
+	viewSweepPitch			= viewAngles.pitch;
+}
+
+/*
+==============
+idPlayer::StopBenchmarkViewSweep
+==============
+*/
+void idPlayer::StopBenchmarkViewSweep( void ) {
+	viewSweepActive			= false;
+	viewSweepDurationMS		= 0;
+}
+
+/*
+==============
+idPlayer::UpdateBenchmarkViewSweep
+
+Drives the sweep from game time so the pan covers the requested arc at a
+constant angular rate.  Returns true while the sweep owns the view angles.
+==============
+*/
+bool idPlayer::UpdateBenchmarkViewSweep( void ) {
+	if ( !viewSweepActive ) {
+		return false;
+	}
+
+	if ( viewSweepDurationMS <= 0 ) {
+		StopBenchmarkViewSweep();
+		return false;
+	}
+
+	const int elapsed = gameLocal.time - viewSweepStartTime;
+	float fraction = (float)elapsed / (float)viewSweepDurationMS;
+	if ( fraction <= 0.0f ) {
+		fraction = 0.0f;
+	} else if ( fraction >= 1.0f ) {
+		fraction = 1.0f;
+		viewSweepActive = false;
+		// Report the arc that was actually walked so an automated capture can
+		// prove the camera really panned instead of trusting the request.
+		gameLocal.Printf( "benchmarkViewSweep: complete, %.1f degrees over %d ms, yaw %.1f -> %.1f\n", 
+			viewSweepDegrees, viewSweepDurationMS, idMath::AngleNormalize180( viewSweepStartYaw ),
+			idMath::AngleNormalize180( viewSweepStartYaw + viewSweepDegrees ) );
+	}
+
+	viewAngles.yaw = idMath::AngleNormalize180( viewSweepStartYaw + ( viewSweepDegrees * fraction ) );
+	viewAngles.pitch = viewSweepPitch;
+	viewAngles.roll = 0.0f;
+	return true;
+}
+
 void idPlayer::UpdateViewAngles( void ) {
 	int i;
 	idAngles delta;
@@ -9011,6 +9094,8 @@ void idPlayer::UpdateViewAngles( void ) {
 			viewAngles.pitch = pm_minviewpitch.GetFloat();
 		}
 	}
+
+	UpdateBenchmarkViewSweep();
 
 	UpdateDeltaViewAngles( viewAngles );
 
