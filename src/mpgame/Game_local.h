@@ -971,6 +971,7 @@ public:
 	int						GetTime() const { return time; }
 	int						GetMSec() const { return msec; }
 	int						GetMHz() const { return mHz; }
+	int						lastPresentationPoseReportTime;	// g_showPresentationPose throttle
 
 	int						GetNextClientNum( int current ) const;
 	idPlayer *				GetClientByNum( int current ) const;

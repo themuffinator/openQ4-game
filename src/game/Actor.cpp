@@ -1277,7 +1277,17 @@ to be led relative to what the server rewinds to.
 ================
 */
 bool idActor::AllowsPresentationInterpolation( void ) const {
-	if ( gameLocal.isMultiplayer ) {
+	// The reasons above are about REMOTE actors: they are already smoothed from
+	// snapshots, and drawing them behind the authoritative pose would move where a
+	// shot has to be led relative to what the server rewinds to.  Neither reason
+	// reaches the client's own body.  It is suppressed in its owner's view
+	// (suppressSurfaceInViewID), so the owner never sees it directly and never
+	// leads a shot against it; the only way it reaches that owner is as its own
+	// shadow.  Excluding it pinned the whole silhouette to the 60 Hz tic while the
+	// eye was drawn on the presentation clock, which shows up as a staggering own
+	// shadow in first person and disappears in third person only because that view
+	// puts the camera back on the authoritative clock as well.
+	if ( gameLocal.isMultiplayer && this != static_cast< const idActor * >( gameLocal.GetLocalPlayer() ) ) {
 		return false;
 	}
 	return idAFEntity_Gibbable::AllowsPresentationInterpolation();

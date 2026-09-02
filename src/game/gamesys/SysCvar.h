@@ -301,6 +301,7 @@ extern idCVar	pm_vehicleCameraMinDist;
 // RAVEN END
 
 extern idCVar	g_showPlayerShadow;
+extern idCVar	g_showPresentationPose;
 extern idCVar	g_dynamicLightShadows;
 
 // gun flashlight / projectile light shadow gate (SysCvar.cpp)

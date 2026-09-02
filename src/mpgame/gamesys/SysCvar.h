@@ -296,6 +296,7 @@ extern idCVar	pm_vehicleCameraMinDist;
 // RAVEN END
 
 extern idCVar	g_showPlayerShadow;
+extern idCVar	g_showPresentationPose;
 
 extern idCVar	g_skipPlayerShadowsMP;
 extern idCVar	g_skipItemShadowsMP;

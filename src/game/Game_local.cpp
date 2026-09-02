@@ -9230,9 +9230,53 @@ void idGameLocal::UpdatePresentationEntityPoses( void ) {
 	idEntity *ent;
 	idEntity *next;
 
+	int updated = 0;
 	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
 		next = ent->presentationNode.Next();
 		ent->UpdatePresentationPose();
+		updated++;
+	}
+
+	// Whether the local player's own body reached the presentation clock is not
+	// observable from outside: in first person its surfaces are suppressed, so the
+	// only witness is its shadow.  Report it directly rather than inferring it.
+	if ( g_showPresentationPose.GetBool() ) {
+		idPlayer *localPlayer = GetLocalPlayer();
+		if ( localPlayer != NULL ) {
+			// Per FRAME, not per tic: the point is to see whether the drawn body
+			// advances between authoritative tics or holds still and then jumps.
+			// The root comes from the interpolated presentation pose; a joint mod is
+			// whatever CreatePresentationFrame handed the skeleton this frame.
+			idVec3 rootOrigin;
+			idMat3 rootAxis;
+			const bool haveRoot = localPlayer->GetPresentationPose( rootOrigin, rootAxis );
+			float jointModYaw = 0.0f;
+			int jointModCount = 0;
+			idAnimator *animator = localPlayer->GetAnimator();
+			if ( animator != NULL ) {
+				jointModCount = animator->NumJointMods();
+				int jointnum = 0;
+				idMat3 modMat;
+				if ( animator->GetJointModDiagnostic( 0, jointnum, modMat ) ) {
+					jointModYaw = modMat.ToAngles().yaw;
+				}
+			}
+			Printf( "presentationFrame: f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f\n",
+				GetPresentationInterpolationFraction(),
+				haveRoot ? rootAxis.ToAngles().yaw : 0.0f,
+				haveRoot ? 1 : 0, jointModCount, jointModYaw );
+		}
+		if ( localPlayer != NULL && time != lastPresentationPoseReportTime ) {
+			lastPresentationPoseReportTime = time;
+			Printf( "presentation: entities=%d localPlayer(listed=%d allows=%d moved=%d canInterp=%d) fraction=%.3f animTime=%d\n",
+				updated,
+				localPlayer->presentationNode.InList() ? 1 : 0,
+				localPlayer->AllowsPresentationInterpolation() ? 1 : 0,
+				localPlayer->PresentationPoseMoved() ? 1 : 0,
+				localPlayer->CanInterpolatePresentationPose() ? 1 : 0,
+				GetPresentationInterpolationFraction(),
+				GetPresentationAnimationTimeMsec() );
+		}
 	}
 }
 

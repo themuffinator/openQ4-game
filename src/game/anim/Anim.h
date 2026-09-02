@@ -637,6 +637,19 @@ class idAnimator{
 	void						ClearForceUpdate( void );
 	bool						CreateFrame( int animtime, bool force );
 	bool						CreatePresentationFrame( int animtime, idJointMat **jointsPtr );
+	int						NumJointMods( void ) const { return jointMods.Num(); }
+	// Previous authoritative value of each joint modifier, kept OUTSIDE jointMod_t
+	// because that struct is savegame-serialized as a raw sizeof() blob.
+	struct jointModPrev_t {
+		int					jointnum;
+		int					time;
+		idMat3				mat;
+		idVec3				pos;
+		bool				hasMat;
+		bool				hasPos;
+	};
+	jointModPrev_t *		FindJointModPrev( int jointnum, bool create );
+	bool					GetJointModDiagnostic( int index, int &jointnum, idMat3 &mat ) const;
 	void						ClearPresentationFrame( void );
 	bool						FrameHasChanged( int animtime ) const;
 	void						GetDelta( int fromtime, int totime, idVec3 &delta ) const;
@@ -729,6 +742,9 @@ private:
 
 	idAnimBlend					channels[ ANIM_NumAnimChannels ][ ANIM_MaxAnimsPerChannel ];
 	idList<jointMod_t *>		jointMods;
+	idList<jointModPrev_t>		jointModPrevs;	// not serialized
+	idMat3						lastPresentationJointModMat;	// diagnostics: value the presentation frame used
+	bool						lastPresentationJointModValid;
 	int							numJoints;
 	idJointMat *				joints;
 	idJointMat *				presentationJoints;

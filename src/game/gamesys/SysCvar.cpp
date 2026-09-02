@@ -490,7 +490,8 @@ idCVar pm_vehicleCameraScaleMax(	"pm_vehicleCameraScaleMax",		"300",		CVAR_GAME 
 idCVar pm_vehicleSoundLerpScale(	"pm_vehicleSoundLerpScale",		"10",		CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_FLOAT, "" );
 // RAVEN END
 
-idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
+idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"1",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
+idCVar g_showPresentationPose(		"g_showPresentationPose",	"0",			CVAR_GAME | CVAR_BOOL, "report whether the local player's body reaches the presentation clock" );
 idCVar g_dynamicLightShadows(		"g_dynamicLightShadows",	"-1",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_INTEGER, "gun flashlight and projectile lights request shadows: -1 = auto (high machine spec, the retail behavior), 0 = never, 1 = always", -1, 1 );
 
 bool G_DynamicLightShadowsEnabled( void ) {

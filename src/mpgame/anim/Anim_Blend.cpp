@@ -3438,6 +3438,8 @@ idAnimator::idAnimator() {
 	presentationJoints		= NULL;
 	lastTransformTime		= -1;
 	presentationJointsValid	= false;
+	lastPresentationJointModMat.Identity();
+	lastPresentationJointModValid = false;
 	stoppedAnimatingUpdate	= false;
 	removeOriginOffset		= false;
 	forceUpdate				= false;
@@ -4122,6 +4124,13 @@ void idAnimator::SetJointPos( jointHandle_t jointnum, jointModTransform_t transf
 */
 // RAVEN END
 
+	jointModPrev_t *prevPos = FindJointModPrev( jointnum, true );
+	if ( prevPos != NULL && prevPos->time != gameLocal.time ) {
+		prevPos->time = gameLocal.time;
+		prevPos->pos = jointMod->pos;
+		prevPos->hasPos = true;
+	}
+
 	jointMod->pos = pos;
 	jointMod->transform_pos = transform_type;
 
@@ -4144,6 +4153,16 @@ void idAnimator::SetJointAxis( jointHandle_t jointnum, jointModTransform_t trans
 	}
 
 	jointMod = FindJointMod( jointnum );
+	// Latch what this modifier held on the previous tic so the presentation frame
+	// has something to interpolate from.  Only the first write in a tic shifts, so
+	// repeated sets inside one tic cannot collapse the interval.
+	jointModPrev_t *prevAxis = FindJointModPrev( jointnum, true );
+	if ( prevAxis != NULL && prevAxis->time != gameLocal.time ) {
+		prevAxis->time = gameLocal.time;
+		prevAxis->mat = jointMod->mat;
+		prevAxis->hasMat = true;
+	}
+
 	jointMod->mat = mat;
 	jointMod->transform_axis = transform_type;
 
@@ -5163,6 +5182,44 @@ renderer may ask for a pose between authoritative tics, but that must not
 replace the joints used by gameplay queries or advance angular joint mods.
 =====================
 */
+/*
+=====================
+idAnimator::FindJointModPrev
+
+The value a joint modifier held on the previous authoritative tic.  Kept beside
+jointMods rather than inside jointMod_t because that struct is written to the
+savegame as a raw sizeof() blob, so growing it would split the save format.
+=====================
+*/
+idAnimator::jointModPrev_t *idAnimator::FindJointModPrev( int jointnum, bool create ) {
+	for ( int i = 0; i < jointModPrevs.Num(); i++ ) {
+		if ( jointModPrevs[ i ].jointnum == jointnum ) {
+			return &jointModPrevs[ i ];
+		}
+	}
+	if ( !create ) {
+		return NULL;
+	}
+	jointModPrev_t entry;
+	entry.jointnum = jointnum;
+	entry.time = -1;
+	entry.mat.Identity();
+	entry.pos.Zero();
+	entry.hasMat = false;
+	entry.hasPos = false;
+	return &jointModPrevs[ jointModPrevs.Append( entry ) ];
+}
+
+bool idAnimator::GetJointModDiagnostic( int index, int &jointnum, idMat3 &mat ) const {
+	if ( index < 0 || index >= jointMods.Num() ) {
+		return false;
+	}
+	jointnum = jointMods[ index ]->jointnum;
+	mat = ( index == 0 && lastPresentationJointModValid )
+			? lastPresentationJointModMat : jointMods[ index ]->mat;
+	return true;
+}
+
 bool idAnimator::CreatePresentationFrame( int currentTime, idJointMat **jointsPtr ) {
 	if ( jointsPtr == NULL ) {
 		return false;
@@ -5202,14 +5259,46 @@ bool idAnimator::CreatePresentationFrame( int currentTime, idJointMat **jointsPt
 	const bool authoritativeStoppedAnimatingUpdate = stoppedAnimatingUpdate;
 
 	idMat3 *authoritativeJointModMats = NULL;
+	idVec3 *authoritativeJointModPos = NULL;
 	int *authoritativeJointModTimes = NULL;
 	const int numJointMods = jointMods.Num();
 	if ( numJointMods > 0 ) {
 		authoritativeJointModMats = ( idMat3 * )_alloca16( numJointMods * sizeof( authoritativeJointModMats[0] ) );
+		authoritativeJointModPos = ( idVec3 * )_alloca16( numJointMods * sizeof( authoritativeJointModPos[0] ) );
 		authoritativeJointModTimes = ( int * )_alloca16( numJointMods * sizeof( authoritativeJointModTimes[0] ) );
 		for ( int i = 0; i < numJointMods; i++ ) {
 			authoritativeJointModMats[i] = jointMods[i]->mat;
+			authoritativeJointModPos[i] = jointMods[i]->pos;
 			authoritativeJointModTimes[i] = jointMods[i]->lastTime;
+		}
+	}
+
+	// A joint modifier is written once per authoritative tic and then held, so
+	// evaluating the skeleton at a presentation time in between still applied the
+	// tic's value.  For the player that is its whole body orientation:
+	// idPlayer::AdjustBodyAngles puts the legs yaw in a JOINTMOD_WORLD on the hip,
+	// so the drawn yaw was an interpolated root plus a frozen counter-rotating
+	// term.  Measured on a turning view, the root advanced ~0.63 degrees across a
+	// tic while the modifier held flat and then jumped ~-0.92 at the boundary: the
+	// body rotated forward smoothly and snapped back once per tic.  In first
+	// person the body's own surfaces are suppressed, so the only witness is its
+	// shadow.  Interpolate the modifier over the same interval as the root.
+	const float jointModFraction = gameLocal.GetPresentationInterpolationFraction();
+	for ( int i = 0; i < numJointMods; i++ ) {
+		const jointModPrev_t *prev = FindJointModPrev( jointMods[i]->jointnum, false );
+		if ( prev == NULL ) {
+			continue;
+		}
+		if ( prev->hasMat && jointMods[i]->transform_axis != JOINTMOD_NONE ) {
+			jointMods[i]->mat = gameLocal.InterpolatePresentationAxis( prev->mat,
+					authoritativeJointModMats[i], jointModFraction );
+			if ( i == 0 ) {
+				lastPresentationJointModMat = jointMods[i]->mat;
+				lastPresentationJointModValid = true;
+			}
+		}
+		if ( prev->hasPos && jointMods[i]->transform_pos != JOINTMOD_NONE ) {
+			jointMods[i]->pos.Lerp( prev->pos, authoritativeJointModPos[i], jointModFraction );
 		}
 	}
 
@@ -5218,8 +5307,11 @@ bool idAnimator::CreatePresentationFrame( int currentTime, idJointMat **jointsPt
 	joints = authoritativeJoints;
 	lastTransformTime = authoritativeTransformTime;
 	stoppedAnimatingUpdate = authoritativeStoppedAnimatingUpdate;
+	// pos is restored as well now that it is written above: it feeds IK, attachment
+	// binds and impact locations, none of which may see a presentation value.
 	for ( int i = 0; i < numJointMods; i++ ) {
 		jointMods[i]->mat = authoritativeJointModMats[i];
+		jointMods[i]->pos = authoritativeJointModPos[i];
 		jointMods[i]->lastTime = authoritativeJointModTimes[i];
 	}
 

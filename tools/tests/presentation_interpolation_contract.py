@@ -391,6 +391,10 @@ def check_source_root(source_root: str) -> dict[str, str]:
         context,
     )
     require(actor_policy, "gameLocal.isMultiplayer", f"{context} competitive actors stay on the simulation clock")
+    # The exclusion is about remote actors. The client's own body is suppressed in
+    # its owner's view and reaches that owner only as its own shadow, so holding it
+    # on the 60 Hz tic staggered that shadow under an interpolated eye.
+    require(actor_policy, "gameLocal.GetLocalPlayer()", f"{context} the local player is exempt from the multiplayer exclusion")
     require(actor_policy, "return false;", f"{context} multiplayer actor root/skeleton exclusion")
     require(actor_policy, "idAFEntity_Gibbable::AllowsPresentationInterpolation()", f"{context} single-player actor eligibility retained")
 
