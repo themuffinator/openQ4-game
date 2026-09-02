@@ -1096,6 +1096,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 	const idDeclEntityDef	*decl;
 
+	if ( clientNum < 0 || clientNum >= MAX_CLIENTS ) {
+		common->Warning( "ClientReadSnapshot: invalid client number %d", clientNum );
+		return false;
+	}
+
 	if ( net_clientLagOMeter.GetBool() && renderSystem && !IsServerDemo() ) {
 		UpdateLagometer( aheadOfServer, dupeUsercmds );
 		if ( !renderSystem->UploadImage( LAGO_IMAGE, (byte *)lagometer, LAGO_IMG_WIDTH, LAGO_IMG_HEIGHT ) ) {
@@ -1135,6 +1140,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 #endif
 
 	ClientReadUnreliableMessages( msg );
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated unreliable-message queue" );
+		return false;
+	}
 
 #if ASYNC_WRITE_TAGS
 	if ( msg.ReadLong() != tagRandom.RandomInt() ) {
@@ -1257,6 +1266,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 		// read the class specific data from the snapshot
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadSnapshot: truncated entity state for %d", i );
+			return false;
+		}
 
 		// once we read new snapshot data, unstale the ent
 		if( ent->fl.networkStale ) {
@@ -1277,12 +1290,16 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 #endif
 	}
 
-	player = static_cast<idPlayer *>( entities[clientNum] );
-	if ( !player ) {
+	if ( entities[ clientNum ] == NULL || !entities[ clientNum ]->IsType( idPlayer::GetClassType() ) ) {
+		common->Warning( "ClientReadSnapshot: no valid local player" );
 		return false;
 	}
+	player = static_cast< idPlayer * >( entities[ clientNum ] );
 
-	if ( player->spectating && player->spectator != clientNum && entities[ player->spectator ] ) {
+	if ( player->spectating && player->spectator != clientNum &&
+		 player->spectator >= 0 && player->spectator < MAX_CLIENTS &&
+		 entities[ player->spectator ] != NULL &&
+		 entities[ player->spectator ]->IsType( idPlayer::GetClassType() ) ) {
 		spectated = static_cast< idPlayer * >( entities[ player->spectator ] );
 	} else {
 		spectated = player;
@@ -1318,6 +1335,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 #endif
 	for ( i = 0; i < ENTITY_PVS_SIZE; i++ ) {
 		snapshot->pvs[i] = msg.ReadDeltaLong( clientPVS[clientNum][i] );
+	}
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated PVS state" );
+		pvs.FreeCurrentPVS( pvsHandle );
+		return false;
 	}
 // RAVEN BEGIN
 // ddynerman: performance profiling
@@ -1438,6 +1460,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 		// read the class specific data from the base state
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadSnapshot: truncated baseline state for %d", ent->entityNumber );
+			pvs.FreeCurrentPVS( pvsHandle );
+			return false;
+		}
 
 		// after snapshot read, notify client of unstale
 		if ( ent->fl.networkStale ) {
@@ -1471,13 +1498,25 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 	deltaMsg.InitReading( base ? &base->state : NULL, &newBase->state, &msg );
 
 	int targetPlayer = deltaMsg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
+	if ( deltaMsg.IsReadOverflowed() || targetPlayer < 0 || targetPlayer >= MAX_CLIENTS ) {
+		common->Warning( "ClientReadSnapshot: invalid or truncated target player %d", targetPlayer );
+		return false;
+	}
 	if ( entities[ targetPlayer ] ) {
-		static_cast< idPlayer* >( entities[ targetPlayer ] )->ReadPlayerStateFromSnapshot( deltaMsg );
+		if ( !entities[ targetPlayer ]->IsType( idPlayer::GetClassType() ) ) {
+			common->Warning( "ClientReadSnapshot: non-player entity %d has player state", targetPlayer );
+			return false;
+		}
+		static_cast< idPlayer * >( entities[ targetPlayer ] )->ReadPlayerStateFromSnapshot( deltaMsg );
 	} else {
 		player->ReadPlayerStateFromSnapshot( deltaMsg );
 	}
 
 	ReadGameStateFromSnapshot( deltaMsg );
+	if ( deltaMsg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated game or player state" );
+		return false;
+	}
 
 	// visualize the snapshot
 	ClientShowSnapshot( clientNum );
@@ -1534,6 +1573,10 @@ bool idGameLocal::ClientReadServerDemoSnapshot( int sequence, const int gameFram
 	clientSnapshots[ MAX_CLIENTS ] = snapshot;
 
 	ClientReadUnreliableMessages( msg );
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadServerDemoSnapshot: truncated unreliable-message queue" );
+		return false;
+	}
 
 	for ( i = msg.ReadBits( GENTITYNUM_BITS ); i != ENTITYNUM_NONE; i = msg.ReadBits( GENTITYNUM_BITS ) ) {
 		if ( i < 0 || i >= ENTITYNUM_NONE ) {
@@ -1649,6 +1692,10 @@ bool idGameLocal::ClientReadServerDemoSnapshot( int sequence, const int gameFram
 
 		// read the class specific data from the snapshot
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadServerDemoSnapshot: truncated entity state for %d", i );
+			return false;
+		}
 
 		// once we read new snapshot data, unstale the ent
 		if( ent->fl.networkStale ) {
@@ -1718,6 +1765,10 @@ bool idGameLocal::ClientReadServerDemoSnapshot( int sequence, const int gameFram
 
 		// read the class specific data from the base state
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadServerDemoSnapshot: truncated baseline state for %d", ent->entityNumber );
+			return false;
+		}
 
 		// after snapshot read, notify client of unstale
 		if( ent->fl.networkStale ) {
@@ -1756,13 +1807,24 @@ bool idGameLocal::ClientReadServerDemoSnapshot( int sequence, const int gameFram
 	// all the players
 	for ( i = 0; i < numClients; i++ ) {
 		if ( entities[i] ) {
-			assert( entities[i]->IsType( idPlayer::GetClassType() ) );
+			if ( !entities[i]->IsType( idPlayer::GetClassType() ) ) {
+				common->Warning( "ClientReadServerDemoSnapshot: non-player entity %d has player state", i );
+				return false;
+			}
 			idPlayer *p = static_cast< idPlayer * >( entities[i] );
 			p->ReadPlayerStateFromSnapshot( deltaMsg );
+			if ( deltaMsg.IsReadOverflowed() ) {
+				common->Warning( "ClientReadServerDemoSnapshot: truncated player state for %d", i );
+				return false;
+			}
 		}
 	}
 	// the game state
 	ReadGameStateFromSnapshot( deltaMsg );
+	if ( deltaMsg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadServerDemoSnapshot: truncated game state" );
+		return false;
+	}
 
 	// process entity events
 	ClientProcessEntityNetworkEventQueue();
@@ -1847,6 +1909,10 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	assert( isClient );
 
 	hitscanDefIndex = msg.ReadLong();
+	if ( msg.IsReadOverflowed() || hitscanDefIndex < 0 || hitscanDefIndex >= declManager->GetNumDecls( DECL_ENTITYDEF ) ) {
+		common->Warning( "idGameLocal::ClientHitScan: invalid or truncated entity def index %d\n", hitscanDefIndex );
+		return;
+	}
 	decl = static_cast< const idDeclEntityDef *>( declManager->DeclByIndex( DECL_ENTITYDEF, hitscanDefIndex ) );
 	if ( !decl ) {
 		common->Warning( "idGameLocal::ClientHitScan: entity def index %d not found\n", hitscanDefIndex );
@@ -1854,7 +1920,12 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	}
 	num_hitscans = decl->dict.GetInt( "hitscans", "1" );
 
-	owner = entities[ msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) ) ];	
+	const int ownerNumber = msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
+	if ( msg.IsReadOverflowed() || ownerNumber < 0 || ownerNumber >= MAX_CLIENTS ) {
+		common->Warning( "idGameLocal::ClientHitScan: invalid or truncated owner %d\n", ownerNumber );
+		return;
+	}
+	owner = entities[ ownerNumber ];
 
 	muzzleOrigin[0] = msg.ReadFloat();
 	muzzleOrigin[1] = msg.ReadFloat();
@@ -1862,10 +1933,18 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	fxOrigin[0] = msg.ReadFloat();
 	fxOrigin[1] = msg.ReadFloat();
 	fxOrigin[2] = msg.ReadFloat();
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "idGameLocal::ClientHitScan: truncated hit-scan origin" );
+		return;
+	}
 
 	// one direction sent per hitscan
 	for( i = 0; i < num_hitscans; i++ ) {
 		dir = msg.ReadDir( 24 );
+		if ( msg.IsReadOverflowed() ) {
+			common->Warning( "idGameLocal::ClientHitScan: truncated hit-scan direction" );
+			return;
+		}
 		gameLocal.HitScan( decl->dict, muzzleOrigin, dir, fxOrigin, owner );
 	}
 }
@@ -2031,6 +2110,10 @@ void idGameLocal::ClientProcessReliableMessage( int clientNum, const idBitMsg &m
 		case GAME_RELIABLE_MESSAGE_SERVERINFO: {
 			idDict info;
 			msg.ReadDeltaDict( info, NULL );
+			if ( msg.IsReadOverflowed() ) {
+				Warning( "Ignoring malformed reliable server-info dictionary" );
+				break;
+			}
 			SetServerInfo( info );
 			break;
 		}
@@ -3700,13 +3783,18 @@ void idGameLocal::ReadNetworkInfo( int gameTime, idFile* file, int clientNum ) {
 				deltaMsg.InitReading( &base->state, NULL, NULL );
 
 				targetPlayer = deltaMsg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
-				player = static_cast< idPlayer* >( entities[ targetPlayer ] );
-				if ( !player ) {
+				if ( deltaMsg.IsReadOverflowed() || targetPlayer < 0 || targetPlayer >= MAX_CLIENTS ||
+					 entities[ targetPlayer ] == NULL || !entities[ targetPlayer ]->IsType( idPlayer::GetClassType() ) ) {
 					Error( "ReadNetworkInfo: no local player entity" );
 					return;
 				}
+				player = static_cast< idPlayer* >( entities[ targetPlayer ] );
 				player->ReadPlayerStateFromSnapshot( deltaMsg );
 				ReadGameStateFromSnapshot( deltaMsg );
+				if ( deltaMsg.IsReadOverflowed() ) {
+					Error( "ReadNetworkInfo: truncated game or player state" );
+					return;
+				}
 			}
 		}
 

@@ -95,6 +95,15 @@ rvClientModel::Present
 ================
 */
 void rvClientModel::Present(void) {
+	PresentPresentation( -1 );
+}
+
+/*
+================
+rvClientModel::PresentPresentation
+================
+*/
+void rvClientModel::PresentPresentation( int presentationTime ) {
 	// Hide client entities bound to a hidden entity
 	if ( bindMaster && (bindMaster->IsHidden ( ) || (bindMaster->GetRenderEntity()->hModel && bindMaster->GetModelDefHandle() == -1) ) ) {
 		return;
@@ -102,13 +111,52 @@ void rvClientModel::Present(void) {
 
 	renderEntity.origin = worldOrigin;
 	renderEntity.axis = worldAxis;
+	renderEntity_t presentationRenderEntity = renderEntity;
+	renderEntity_t *submittedRenderEntity = &renderEntity;
+	idAnimator *animator = GetAnimator();
+	bool hasPresentationJoints = false;
+	if ( animator != NULL && presentationTime >= 0 && presentationTime != gameLocal.time && renderEntity.hModel != NULL ) {
+		animator->CreateFrame( gameLocal.time, false );
+		idJointMat *presentationJoints = NULL;
+		hasPresentationJoints = animator->CreatePresentationFrame( presentationTime, &presentationJoints );
+		if ( hasPresentationJoints ) {
+			presentationRenderEntity.callback = NULL;
+			presentationRenderEntity.numJoints = animator->NumJoints();
+			presentationRenderEntity.joints = presentationJoints;
+			presentationRenderEntity.hModel->BoundsFromJoints( presentationJoints, presentationRenderEntity.bounds );
+			submittedRenderEntity = &presentationRenderEntity;
+		}
+	}
 
 	// add to refresh list
 	if ( entityDefHandle == -1 ) {
-		entityDefHandle = gameRenderWorld->AddEntityDef( &renderEntity );
+		entityDefHandle = gameRenderWorld->AddEntityDef( submittedRenderEntity );
 	} else {
-		gameRenderWorld->UpdateEntityDef( entityDefHandle, &renderEntity );
-	}		
+		gameRenderWorld->UpdateEntityDef( entityDefHandle, submittedRenderEntity );
+	}
+	if ( hasPresentationJoints ) {
+		animator->ClearPresentationFrame();
+	}
+}
+
+/*
+================
+rvClientModel::UpdatePresentationTransform
+================
+*/
+void rvClientModel::UpdatePresentationTransform( int presentationTime ) {
+	if ( !bindMaster ) {
+		return;
+	}
+
+	UpdateBind( presentationTime );
+	PresentPresentation( presentationTime );
+}
+
+bool rvClientModel::HasPresentationAnimation( int fromTime, int toTime ) const {
+	const idAnimator *animator = GetAnimator();
+	return animator != NULL &&
+		( animator->IsAnimating( fromTime, true ) || animator->IsAnimating( toTime, true ) );
 }
 
 /*

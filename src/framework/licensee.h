@@ -19,6 +19,7 @@
 #define PROJECT_VERSION_DATE			OPENQ4_VERSION_DATE
 #define PROJECT_WEBSITE				"www.darkmatter-quake.com"
 #define PROJECT_REPO					"https://github.com/themuffinator/openQ4"
+#define PROJECT_RELEASES_URL			PROJECT_REPO "/releases"
 
 #define GAME_NAME						PROJECT_NAME			// appears on errors and secondary windows
 #define GAME_ICON						"q4icon.bmp"

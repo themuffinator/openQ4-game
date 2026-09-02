@@ -2049,15 +2049,29 @@ int idLexer::LoadFile( const char *filename, bool OSPath ) {
 		return false;
 	}
 	length = fp->Length();
+	if ( length < 0 || length == idMath::INT_MAX ) {
+		idLib::common->Warning( "idLexer::LoadFile: invalid length %d for '%s'", length, pathname.c_str() );
+		idLib::fileSystem->CloseFile( fp );
+		return false;
+	}
 // RAVEN BEGIN
 // amccarthy: Added memory allocation tag
 	buf = (char *) Mem_Alloc( length + 1, MA_LEXER );
 	if( !buf ) {
+		idLib::fileSystem->CloseFile( fp );
 		common->FatalError( "Memory system failure : out of memory" );
+		return false;
 	}
 // RAVEN END
+	const int bytesRead = fp->Read( buf, length );
+	if ( bytesRead != length ) {
+		idLib::common->Warning( "idLexer::LoadFile: short read for '%s' (read %d of %d bytes)",
+			pathname.c_str(), bytesRead, length );
+		idLib::fileSystem->CloseFile( fp );
+		Mem_Free( buf );
+		return false;
+	}
 	buf[length] = '\0';
-	fp->Read( buf, length );
 	idLexer::fileTime = fp->Timestamp();
 	idLexer::filename = fp->GetFullPath();
 	idLib::fileSystem->CloseFile( fp );

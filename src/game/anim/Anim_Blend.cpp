@@ -3462,7 +3462,11 @@ idAnimator::idAnimator() {
 	entity					= NULL;
 	numJoints				= 0;
 	joints					= NULL;
+	presentationJoints		= NULL;
 	lastTransformTime		= -1;
+	presentationJointsValid	= false;
+	lastPresentationJointModMat.Identity();
+	lastPresentationJointModValid = false;
 	stoppedAnimatingUpdate	= false;
 	removeOriginOffset		= false;
 	forceUpdate				= false;
@@ -3505,7 +3509,7 @@ idAnimator::Allocated
 size_t idAnimator::Allocated( void ) const {
 	size_t	size;
 
-	size = jointMods.Allocated() + numJoints * sizeof( joints[0] ) + jointMods.Num() * sizeof( jointMods[ 0 ] ) + AFPoseJointMods.Allocated() + AFPoseJointFrameSize * sizeof( AFPoseJointFrame[0] ) + AFPoseJoints.Allocated();
+	size = jointMods.Allocated() + numJoints * sizeof( joints[0] ) + ( presentationJoints ? numJoints * sizeof( presentationJoints[0] ) : 0 ) + jointMods.Num() * sizeof( jointMods[ 0 ] ) + AFPoseJointMods.Allocated() + AFPoseJointFrameSize * sizeof( AFPoseJointFrame[0] ) + AFPoseJoints.Allocated();
 
 	return size;
 }
@@ -3664,6 +3668,9 @@ void idAnimator::FreeData( void ) {
 
 	Mem_Free16( joints );
 	joints = NULL;
+	Mem_Free16( presentationJoints );
+	presentationJoints = NULL;
+	presentationJointsValid = false;
 	numJoints = 0;
 
 	modelDef = NULL;
@@ -4150,6 +4157,13 @@ void idAnimator::SetJointPos( jointHandle_t jointnum, jointModTransform_t transf
 */
 // RAVEN END
 
+	jointModPrev_t *prevPos = FindJointModPrev( jointnum, true );
+	if ( prevPos != NULL && prevPos->time != gameLocal.time ) {
+		prevPos->time = gameLocal.time;
+		prevPos->pos = jointMod->pos;
+		prevPos->hasPos = true;
+	}
+
 	jointMod->pos = pos;
 	jointMod->transform_pos = transform_type;
 
@@ -4200,6 +4214,16 @@ void idAnimator::SetJointAxis( jointHandle_t jointnum, jointModTransform_t trans
 	}
 */
 // RAVEN END
+
+	// Latch what this modifier held on the previous tic so the presentation frame
+	// has something to interpolate from.  Only the first write in a tic shifts, so
+	// repeated sets inside one tic cannot collapse the interval.
+	jointModPrev_t *prevAxis = FindJointModPrev( jointnum, true );
+	if ( prevAxis != NULL && prevAxis->time != gameLocal.time ) {
+		prevAxis->time = gameLocal.time;
+		prevAxis->mat = jointMod->mat;
+		prevAxis->hasMat = true;
+	}
 
 	jointMod->mat = mat;
 	jointMod->transform_axis = transform_type;
@@ -4932,6 +4956,11 @@ bool idAnimator::CreateFrame( int currentTime, bool force ) {
 	const idJointQuat *	defaultPose;
 	static idCVar		r_showSkel( "r_showSkel", "0", CVAR_RENDERER | CVAR_INTEGER, "draw the skeleton when model animates, 1 = draw model with skeleton, 2 = draw skeleton only, 3 = draw joints only", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
 
+	// Any authoritative evaluation or animation-state refresh invalidates the
+	// draw-only cache, even when the requested authoritative time was already
+	// current and CreateFrame exits early below.
+	presentationJointsValid = false;
+
 	if ( gameLocal.inCinematic && gameLocal.skipCinematic ) {
 		return false;
 	}
@@ -5190,11 +5219,178 @@ bool idAnimator::CreateFrame( int currentTime, bool force ) {
 
 /*
 =====================
+idAnimator::CreatePresentationFrame
+
+Evaluate an arbitrary draw time into a separate aligned joint buffer.  The
+renderer may ask for a pose between authoritative tics, but that must not
+replace the joints used by gameplay queries or advance angular joint mods.
+=====================
+*/
+/*
+=====================
+idAnimator::FindJointModPrev
+
+The value a joint modifier held on the previous authoritative tic.  Kept beside
+jointMods rather than inside jointMod_t because that struct is written to the
+savegame as a raw sizeof() blob, so growing it would split the save format.
+=====================
+*/
+idAnimator::jointModPrev_t *idAnimator::FindJointModPrev( int jointnum, bool create ) {
+	for ( int i = 0; i < jointModPrevs.Num(); i++ ) {
+		if ( jointModPrevs[ i ].jointnum == jointnum ) {
+			return &jointModPrevs[ i ];
+		}
+	}
+	if ( !create ) {
+		return NULL;
+	}
+	jointModPrev_t entry;
+	entry.jointnum = jointnum;
+	entry.time = -1;
+	entry.mat.Identity();
+	entry.pos.Zero();
+	entry.hasMat = false;
+	entry.hasPos = false;
+	return &jointModPrevs[ jointModPrevs.Append( entry ) ];
+}
+
+bool idAnimator::GetPresentationJointDiagnostic( int index, idVec3 &pos ) const {
+	// Deliberately not gated on presentationJointsValid: the caller clears that
+	// flag after pushing, while the renderer still reads this buffer.
+	if ( presentationJoints == NULL || index < 0 || index >= numJoints ) {
+		return false;
+	}
+	pos = presentationJoints[ index ].ToVec3();
+	return true;
+}
+
+bool idAnimator::GetJointModDiagnostic( int index, int &jointnum, idMat3 &mat ) const {
+	if ( index < 0 || index >= jointMods.Num() ) {
+		return false;
+	}
+	jointnum = jointMods[ index ]->jointnum;
+	mat = ( index == 0 && lastPresentationJointModValid )
+			? lastPresentationJointModMat : jointMods[ index ]->mat;
+	return true;
+}
+
+bool idAnimator::CreatePresentationFrame( int currentTime, idJointMat **jointsPtr ) {
+	if ( jointsPtr == NULL ) {
+		return false;
+	}
+	*jointsPtr = NULL;
+
+	if ( !modelDef || !modelDef->ModelHandle() || joints == NULL || numJoints <= 0 ) {
+		return false;
+	}
+
+	if ( presentationJoints == NULL ) {
+		presentationJoints = ( idJointMat * )Mem_Alloc16( numJoints * sizeof( presentationJoints[0] ), MA_ANIM );
+	}
+	presentationJointsValid = false;
+
+	// AF poses are current physics snapshots, and angular joint mods integrate
+	// state from their last authoritative sample.  Neither can be rewound by
+	// evaluating at an earlier draw time, so keep those skeletons authoritative.
+	bool canEvaluateAtPresentationTime = AFPoseJoints.Num() == 0;
+	for ( int i = 0; canEvaluateAtPresentationTime && i < jointMods.Num(); i++ ) {
+		canEvaluateAtPresentationTime = jointMods[i]->angularVelocity.GetStartTime() == 0;
+	}
+	if ( !canEvaluateAtPresentationTime ) {
+		SIMDProcessor->Memcpy( presentationJoints, joints, numJoints * sizeof( presentationJoints[0] ) );
+		presentationJointsValid = true;
+		*jointsPtr = presentationJoints;
+		return true;
+	}
+
+	// CreateFrame writes through the animator's joints pointer and updates a
+	// small amount of cache/joint-mod state.  Redirect the output and restore
+	// every mutable field afterwards so the presentation pass is observational
+	// only from gameplay's point of view.
+	SIMDProcessor->Memcpy( presentationJoints, joints, numJoints * sizeof( presentationJoints[0] ) );
+	idJointMat *authoritativeJoints = joints;
+	const int authoritativeTransformTime = lastTransformTime;
+	const bool authoritativeStoppedAnimatingUpdate = stoppedAnimatingUpdate;
+
+	idMat3 *authoritativeJointModMats = NULL;
+	idVec3 *authoritativeJointModPos = NULL;
+	int *authoritativeJointModTimes = NULL;
+	const int numJointMods = jointMods.Num();
+	if ( numJointMods > 0 ) {
+		authoritativeJointModMats = ( idMat3 * )_alloca16( numJointMods * sizeof( authoritativeJointModMats[0] ) );
+		authoritativeJointModPos = ( idVec3 * )_alloca16( numJointMods * sizeof( authoritativeJointModPos[0] ) );
+		authoritativeJointModTimes = ( int * )_alloca16( numJointMods * sizeof( authoritativeJointModTimes[0] ) );
+		for ( int i = 0; i < numJointMods; i++ ) {
+			authoritativeJointModMats[i] = jointMods[i]->mat;
+			authoritativeJointModPos[i] = jointMods[i]->pos;
+			authoritativeJointModTimes[i] = jointMods[i]->lastTime;
+		}
+	}
+
+	// A joint modifier is written once per authoritative tic and then held, so
+	// evaluating the skeleton at a presentation time in between still applied the
+	// tic's value.  For the player that is its whole body orientation:
+	// idPlayer::AdjustBodyAngles puts the legs yaw in a JOINTMOD_WORLD on the hip,
+	// so the drawn yaw was an interpolated root plus a frozen counter-rotating
+	// term.  Measured on a turning view, the root advanced ~0.63 degrees across a
+	// tic while the modifier held flat and then jumped ~-0.92 at the boundary: the
+	// body rotated forward smoothly and snapped back once per tic.  In first
+	// person the body's own surfaces are suppressed, so the only witness is its
+	// shadow.  Interpolate the modifier over the same interval as the root.
+	const float jointModFraction = gameLocal.GetPresentationInterpolationFraction();
+	for ( int i = 0; i < numJointMods; i++ ) {
+		const jointModPrev_t *prev = FindJointModPrev( jointMods[i]->jointnum, false );
+		if ( prev == NULL ) {
+			continue;
+		}
+		if ( prev->hasMat && jointMods[i]->transform_axis != JOINTMOD_NONE ) {
+			jointMods[i]->mat = gameLocal.InterpolatePresentationAxis( prev->mat,
+					authoritativeJointModMats[i], jointModFraction );
+			if ( i == 0 ) {
+				lastPresentationJointModMat = jointMods[i]->mat;
+				lastPresentationJointModValid = true;
+			}
+		}
+		if ( prev->hasPos && jointMods[i]->transform_pos != JOINTMOD_NONE ) {
+			jointMods[i]->pos.Lerp( prev->pos, authoritativeJointModPos[i], jointModFraction );
+		}
+	}
+
+	joints = presentationJoints;
+	CreateFrame( currentTime, true );
+	joints = authoritativeJoints;
+	lastTransformTime = authoritativeTransformTime;
+	stoppedAnimatingUpdate = authoritativeStoppedAnimatingUpdate;
+	// pos is restored as well now that it is written above: it feeds IK, attachment
+	// binds and impact locations, none of which may see a presentation value.
+	for ( int i = 0; i < numJointMods; i++ ) {
+		jointMods[i]->mat = authoritativeJointModMats[i];
+		jointMods[i]->pos = authoritativeJointModPos[i];
+		jointMods[i]->lastTime = authoritativeJointModTimes[i];
+	}
+
+	presentationJointsValid = true;
+	*jointsPtr = presentationJoints;
+	return true;
+}
+
+/*
+=====================
+idAnimator::ClearPresentationFrame
+=====================
+*/
+void idAnimator::ClearPresentationFrame( void ) {
+	presentationJointsValid = false;
+}
+
+/*
+=====================
 idAnimator::ForceUpdate
 =====================
 */
 void idAnimator::ForceUpdate( void ) {
 	lastTransformTime = -1;
+	presentationJointsValid = false;
 	forceUpdate = true;
 }
 
@@ -5228,6 +5424,26 @@ bool idAnimator::GetJointTransform( jointHandle_t jointHandle, int currentTime, 
 	offset = joints[ jointHandle ].ToVec3();
 	axis = joints[ jointHandle ].ToMat3();
 
+	return true;
+}
+
+/*
+=====================
+idAnimator::GetPresentationJointTransform
+=====================
+*/
+bool idAnimator::GetPresentationJointTransform( jointHandle_t jointHandle, idVec3 &offset, idMat3 &axis ) const {
+	if ( !presentationJointsValid || !modelDef || ( jointHandle < 0 ) || ( jointHandle >= modelDef->NumJoints() ) ) {
+		return false;
+	}
+	if ( g_perfTest_noJointTransform.GetBool() ) {
+		offset = entity->GetPhysics()->GetCenterMass() - entity->GetPhysics()->GetOrigin();
+		axis = entity->GetRenderEntity()->axis;
+		return true;
+	}
+
+	offset = presentationJoints[ jointHandle ].ToVec3();
+	axis = presentationJoints[ jointHandle ].ToMat3();
 	return true;
 }
 

@@ -81,7 +81,7 @@ idBitMsg::WriteBits
 */
 void idBitMsg::WriteBits( int value, int numBits ) {
 	int		put;
-	int		fraction;
+	uint32_t	fraction;
 
 	if ( !writeData ) {
 		idLib::common->Error( "idBitMsg::WriteBits: cannot write to message" );
@@ -95,13 +95,12 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 	// check for value overflows
 	if ( numBits != 32 ) {
 		if ( numBits > 0 ) {
-			if ( value > ( 1 << numBits ) - 1 ) {
-				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
-			} else if ( value < 0 ) {
+			const uint32_t maximumValue = ( 1u << numBits ) - 1u;
+			if ( value < 0 || static_cast<uint32_t>( value ) > maximumValue ) {
 				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			}
 		} else {
-			int r = 1 << ( - 1 - numBits );
+			const int64_t r = static_cast<int64_t>( 1 ) << ( -1 - numBits );
 			if ( value > r - 1 ) {
 				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			} else if ( value < -r ) {
@@ -113,6 +112,7 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 	if ( numBits < 0 ) {
 		numBits = -numBits;
 	}
+	uint32_t unsignedValue = static_cast<uint32_t>( value );
 
 	// check for msg overflow
 	if ( CheckOverflow( numBits ) ) {
@@ -129,10 +129,10 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 		if ( put > numBits ) {
 			put = numBits;
 		}
-		fraction = value & ( ( 1 << put ) - 1 );
-		writeData[curSize - 1] |= fraction << writeBit;
+		fraction = unsignedValue & ( ( 1u << put ) - 1u );
+		writeData[curSize - 1] |= static_cast<byte>( fraction << writeBit );
 		numBits -= put;
-		value >>= put;
+		unsignedValue >>= put;
 		writeBit = ( writeBit + put ) & 7;
 	}
 }
@@ -200,18 +200,26 @@ idBitMsg::WriteDeltaByteCounter
 ================
 */
 void idBitMsg::WriteDeltaByteCounter( int oldValue, int newValue ) {
-	int i, x;
+	int i;
+	const uint32_t x = static_cast<uint32_t>( oldValue ^ newValue );
 
-	x = oldValue ^ newValue;
-	for ( i = 7; i > 0; i-- ) {
-		if ( x & ( 1 << i ) ) {
+	if ( x & ( 1u << 7 ) ) {
+		idLib::common->Warning( "idBitMsg::WriteDeltaByteCounter: unencodable high-bit change" );
+		WriteBits( 0, 3 );
+		return;
+	}
+	for ( i = 6; i >= 0; i-- ) {
+		if ( x & ( 1u << i ) ) {
 			i++;
 			break;
 		}
 	}
+	if ( i < 0 ) {
+		i = 0;
+	}
 	WriteBits( i, 3 );
 	if ( i ) {
-		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
+		WriteBits( static_cast<int>( ( ( 1u << i ) - 1u ) & static_cast<uint32_t>( newValue ) ), i );
 	}
 }
 
@@ -221,18 +229,26 @@ idBitMsg::WriteDeltaShortCounter
 ================
 */
 void idBitMsg::WriteDeltaShortCounter( int oldValue, int newValue ) {
-	int i, x;
+	int i;
+	const uint32_t x = static_cast<uint32_t>( oldValue ^ newValue );
 
-	x = oldValue ^ newValue;
-	for ( i = 15; i > 0; i-- ) {
-		if ( x & ( 1 << i ) ) {
+	if ( x & ( 1u << 15 ) ) {
+		idLib::common->Warning( "idBitMsg::WriteDeltaShortCounter: unencodable high-bit change" );
+		WriteBits( 0, 4 );
+		return;
+	}
+	for ( i = 14; i >= 0; i-- ) {
+		if ( x & ( 1u << i ) ) {
 			i++;
 			break;
 		}
 	}
+	if ( i < 0 ) {
+		i = 0;
+	}
 	WriteBits( i, 4 );
 	if ( i ) {
-		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
+		WriteBits( static_cast<int>( ( ( 1u << i ) - 1u ) & static_cast<uint32_t>( newValue ) ), i );
 	}
 }
 
@@ -242,18 +258,26 @@ idBitMsg::WriteDeltaLongCounter
 ================
 */
 void idBitMsg::WriteDeltaLongCounter( int oldValue, int newValue ) {
-	int i, x;
+	int i;
+	const uint32_t x = static_cast<uint32_t>( oldValue ^ newValue );
 
-	x = oldValue ^ newValue;
-	for ( i = 31; i > 0; i-- ) {
-		if ( x & ( 1 << i ) ) {
+	if ( x & ( 1u << 31 ) ) {
+		idLib::common->Warning( "idBitMsg::WriteDeltaLongCounter: unencodable high-bit change" );
+		WriteBits( 0, 5 );
+		return;
+	}
+	for ( i = 30; i >= 0; i-- ) {
+		if ( x & ( 1u << i ) ) {
 			i++;
 			break;
 		}
 	}
+	if ( i < 0 ) {
+		i = 0;
+	}
 	WriteBits( i, 5 );
 	if ( i ) {
-		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
+		WriteBits( static_cast<int>( ( ( 1u << i ) - 1u ) & static_cast<uint32_t>( newValue ) ), i );
 	}
 }
 
@@ -317,10 +341,10 @@ idBitMsg::ReadBits
 ================
 */
 int idBitMsg::ReadBits( int numBits ) const {
-	int		value;
+	uint32_t	value;
 	int		valueBits;
 	int		get;
-	int		fraction;
+	uint32_t	fraction;
 	bool	sgn;
 
 	if ( !readData ) {
@@ -343,7 +367,8 @@ int idBitMsg::ReadBits( int numBits ) const {
 	}
 
 	// check for overflow
-	if ( numBits > GetRemainingReadBits() ) {
+	if ( IsReadOverflowed() || numBits > GetRemainingReadBits() ) {
+		MarkReadOverflowed();
 		return -1;
 	}
 
@@ -357,7 +382,7 @@ int idBitMsg::ReadBits( int numBits ) const {
 		}
 		fraction = readData[readCount - 1];
 		fraction >>= readBit;
-		fraction &= ( 1 << get ) - 1;
+		fraction &= ( 1u << get ) - 1u;
 		value |= fraction << valueBits;
 
 		valueBits += get;
@@ -365,12 +390,14 @@ int idBitMsg::ReadBits( int numBits ) const {
 	}
 
 	if ( sgn ) {
-		if ( value & ( 1 << ( numBits - 1 ) ) ) {
-			value |= -1 ^ ( ( 1 << numBits ) - 1 );
+		if ( value & ( 1u << ( numBits - 1 ) ) ) {
+			value |= ~( ( 1u << numBits ) - 1u );
 		}
 	}
 
-	return value;
+	int result;
+	memcpy( &result, &value, sizeof( result ) );
+	return result;
 }
 
 /*
@@ -415,13 +442,20 @@ int idBitMsg::ReadData( void *data, int length ) const {
 	int cnt;
 
 	ReadByteAlign();
+	if ( IsReadOverflowed() || length < 0 ) {
+		MarkReadOverflowed();
+		return 0;
+	}
 	cnt = readCount;
 
-	if ( readCount + length > curSize ) {
+	if ( length > curSize - readCount ) {
+		const int remaining = curSize - readCount;
 		if ( data ) {
-			memcpy( data, readData + readCount, GetRemainingData() );
+			memcpy( data, readData + readCount, remaining );
+			memset( static_cast<byte *>( data ) + remaining, 0, length - remaining );
 		}
-		readCount = curSize;
+		MarkReadOverflowed();
+		return remaining;
 	} else {
 		if ( data ) {
 			memcpy( data, readData + readCount, length );
@@ -468,11 +502,16 @@ int idBitMsg::ReadDeltaByteCounter( int oldValue ) const {
 	int i, newValue;
 
 	i = ReadBits( 3 );
-	if ( !i ) {
+	if ( IsReadOverflowed() || i <= 0 ) {
 		return oldValue;
 	}
 	newValue = ReadBits( i );
-	return ( oldValue & ~( ( 1 << i ) - 1 ) | newValue );
+	if ( IsReadOverflowed() ) {
+		return oldValue;
+	}
+	const unsigned int mask = ( 1u << i ) - 1u;
+	return static_cast<int>( ( static_cast<unsigned int>( oldValue ) & ~mask ) |
+		( static_cast<unsigned int>( newValue ) & mask ) );
 }
 
 /*
@@ -484,11 +523,16 @@ int idBitMsg::ReadDeltaShortCounter( int oldValue ) const {
 	int i, newValue;
 
 	i = ReadBits( 4 );
-	if ( !i ) {
+	if ( IsReadOverflowed() || i <= 0 ) {
 		return oldValue;
 	}
 	newValue = ReadBits( i );
-	return ( oldValue & ~( ( 1 << i ) - 1 ) | newValue );
+	if ( IsReadOverflowed() ) {
+		return oldValue;
+	}
+	const unsigned int mask = ( 1u << i ) - 1u;
+	return static_cast<int>( ( static_cast<unsigned int>( oldValue ) & ~mask ) |
+		( static_cast<unsigned int>( newValue ) & mask ) );
 }
 
 /*
@@ -500,11 +544,16 @@ int idBitMsg::ReadDeltaLongCounter( int oldValue ) const {
 	int i, newValue;
 
 	i = ReadBits( 5 );
-	if ( !i ) {
+	if ( IsReadOverflowed() || i <= 0 || i > 31 ) {
 		return oldValue;
 	}
 	newValue = ReadBits( i );
-	return ( oldValue & ~( ( 1 << i ) - 1 ) | newValue );
+	if ( IsReadOverflowed() ) {
+		return oldValue;
+	}
+	const unsigned int mask = ( 1u << i ) - 1u;
+	return static_cast<int>( ( static_cast<unsigned int>( oldValue ) & ~mask ) |
+		( static_cast<unsigned int>( newValue ) & mask ) );
 }
 
 /*
@@ -516,24 +565,43 @@ bool idBitMsg::ReadDeltaDict( idDict &dict, const idDict *base ) const {
 	char		key[MAX_STRING_CHARS];
 	char		value[MAX_STRING_CHARS];
 	bool		changed = false;
+	idDict		decoded;
 
 	if ( base != NULL ) {
-		dict = *base;
+		decoded = *base;
 	} else {
-		dict.Clear();
+		decoded.Clear();
 	}
 
-	while( ReadString( key, sizeof( key ) ) != 0 ) {
+	while ( true ) {
+		ReadString( key, sizeof( key ) );
+		if ( IsReadOverflowed() ) {
+			return false;
+		}
+		if ( key[ 0 ] == '\0' ) {
+			break;
+		}
 		ReadString( value, sizeof( value ) );
-		dict.Set( key, value );
+		if ( IsReadOverflowed() ) {
+			return false;
+		}
+		decoded.Set( key, value );
 		changed = true;
 	}
 
-	while( ReadString( key, sizeof( key ) ) != 0 ) {
-		dict.Delete( key );
+	while ( true ) {
+		ReadString( key, sizeof( key ) );
+		if ( IsReadOverflowed() ) {
+			return false;
+		}
+		if ( key[ 0 ] == '\0' ) {
+			break;
+		}
+		decoded.Delete( key );
 		changed = true;
 	}
 
+	dict = decoded;
 	return changed;
 }
 
@@ -612,7 +680,7 @@ void idBitMsgDelta::WriteBits( int value, int numBits ) {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( numBits );
-		if ( baseValue == value ) {
+		if ( !base->IsReadOverflowed() && baseValue == value ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -642,7 +710,7 @@ void idBitMsgDelta::WriteDelta( int oldValue, int newValue, int numBits ) {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( numBits );
-		if ( baseValue == newValue ) {
+		if ( !base->IsReadOverflowed() && baseValue == newValue ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -671,8 +739,14 @@ int idBitMsgDelta::ReadBits( int numBits ) const {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( numBits );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			value = baseValue;
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			value = baseValue;
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			value = readDelta->ReadBits( numBits );
 			changed = true;
@@ -702,8 +776,14 @@ int idBitMsgDelta::ReadDelta( int oldValue, int numBits ) const {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( numBits );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			value = baseValue;
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			value = baseValue;
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
 			value = oldValue;
 			changed = true;
@@ -735,7 +815,7 @@ void idBitMsgDelta::WriteString( const char *s, int maxLength ) {
 	} else {
 		char baseString[MAX_DATA_BUFFER];
 		base->ReadString( baseString, sizeof( baseString ) );
-		if ( idStr::Cmp( s, baseString ) == 0 ) {
+		if ( !base->IsReadOverflowed() && idStr::Cmp( s, baseString ) == 0 ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -762,7 +842,7 @@ void idBitMsgDelta::WriteData( const void *data, int length ) {
 		byte baseData[MAX_DATA_BUFFER];
 		assert( length < sizeof( baseData ) );
 		base->ReadData( baseData, length );
-		if ( memcmp( data, baseData, length ) == 0 ) {
+		if ( !base->IsReadOverflowed() && memcmp( data, baseData, length ) == 0 ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -807,7 +887,7 @@ void idBitMsgDelta::WriteDeltaByteCounter( int oldValue, int newValue ) {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 8 );
-		if ( baseValue == newValue ) {
+		if ( !base->IsReadOverflowed() && baseValue == newValue ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -832,7 +912,7 @@ void idBitMsgDelta::WriteDeltaShortCounter( int oldValue, int newValue ) {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 16 );
-		if ( baseValue == newValue ) {
+		if ( !base->IsReadOverflowed() && baseValue == newValue ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -857,7 +937,7 @@ void idBitMsgDelta::WriteDeltaLongCounter( int oldValue, int newValue ) {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 32 );
-		if ( baseValue == newValue ) {
+		if ( !base->IsReadOverflowed() && baseValue == newValue ) {
 			writeDelta->WriteBits( 0, 1 );
 		} else {
 			writeDelta->WriteBits( 1, 1 );
@@ -879,8 +959,14 @@ void idBitMsgDelta::ReadString( char *buffer, int bufferSize ) const {
 	} else {
 		char baseString[MAX_DATA_BUFFER];
 		base->ReadString( baseString, sizeof( baseString ) );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			idStr::Copynz( buffer, baseString, bufferSize );
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			idStr::Copynz( buffer, baseString, bufferSize );
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			readDelta->ReadString( buffer, bufferSize );
 			changed = true;
@@ -905,8 +991,14 @@ void idBitMsgDelta::ReadData( void *data, int length ) const {
 		char baseData[MAX_DATA_BUFFER];
 		assert( length < sizeof( baseData ) );
 		base->ReadData( baseData, length );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			memcpy( data, baseData, length );
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			memcpy( data, baseData, length );
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			readDelta->ReadData( data, length );
 			changed = true;
@@ -955,8 +1047,14 @@ int idBitMsgDelta::ReadDeltaByteCounter( int oldValue ) const {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 8 );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			value = baseValue;
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			value = baseValue;
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			value = readDelta->ReadDeltaByteCounter( oldValue );
 			changed = true;
@@ -982,8 +1080,14 @@ int idBitMsgDelta::ReadDeltaShortCounter( int oldValue ) const {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 16 );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			value = baseValue;
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			value = baseValue;
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			value = readDelta->ReadDeltaShortCounter( oldValue );
 			changed = true;
@@ -1009,8 +1113,14 @@ int idBitMsgDelta::ReadDeltaLongCounter( int oldValue ) const {
 		changed = true;
 	} else {
 		int baseValue = base->ReadBits( 32 );
-		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
+		const bool baseOverflowed = base->IsReadOverflowed();
+		if ( !readDelta ) {
 			value = baseValue;
+		} else if ( readDelta->ReadBits( 1 ) == 0 ) {
+			value = baseValue;
+			if ( baseOverflowed ) {
+				readDelta->MarkReadOverflowed();
+			}
 		} else {
 			value = readDelta->ReadDeltaLongCounter( oldValue );
 			changed = true;
@@ -1101,15 +1211,34 @@ bool idMsgQueue::Get( byte *data, int dataSize, int &size, bool sequencing ) {
 		size = 0;
 		return false;
 	}
-	int sequence;
+	const int headerSize = sequencing ? 6 : 2;
+	const int totalSize = GetTotalSize();
+	if ( totalSize < headerSize ) {
+		common->Warning( "idMsgQueue::Get: truncated queue record header" );
+		size = 0;
+		first = last;
+		startIndex = endIndex;
+		return false;
+	}
 	size = ReadUShort();
-	if ( data && size > dataSize ) {
-		common->Error( "idMsgQueue::Get  buffer size of %d < get size of %d", dataSize, size );
+	if ( size <= 0 || size > totalSize - headerSize || ( data && size > dataSize ) ) {
+		common->Warning( "idMsgQueue::Get: invalid record size %d (available %d, destination %d)",
+			size, totalSize - headerSize, data ? dataSize : 0 );
+		size = 0;
+		first = last;
+		startIndex = endIndex;
+		return false;
 	}
 
 	if ( sequencing ) {
-		sequence = ReadLong();
-		assert( sequence == first );
+		const int sequence = ReadLong();
+		if ( sequence != first ) {
+			common->Warning( "idMsgQueue::Get: invalid record sequence %d (expected %d)", sequence, first );
+			size = 0;
+			first = last;
+			startIndex = endIndex;
+			return false;
+		}
 	}
 	ReadData( data, size );
 	first++;
@@ -1315,8 +1444,48 @@ idMsgQueue::ReadFrom
 */
 void idMsgQueue::ReadFrom( const idBitMsg &msg ) {
 	Init( 0 );
-	endIndex = msg.ReadUShort();
-	msg.ReadData( buffer, endIndex );
+	const int encodedSize = msg.ReadUShort();
+	const int available = msg.GetRemainingData();
+	const int remaining = available > 0 ? available : 0;
+	if ( encodedSize < 0 || encodedSize >= MAX_MSG_QUEUE_SIZE ||
+		 encodedSize > remaining ) {
+		common->Warning( "idMsgQueue::ReadFrom: invalid encoded queue size %d", encodedSize );
+		const int discard = idMath::ClampInt( 0, remaining, encodedSize );
+		if ( discard > 0 ) {
+			msg.ReadData( NULL, discard );
+		}
+		msg.MarkReadOverflowed();
+		endIndex = 0;
+		return;
+	}
+	endIndex = encodedSize;
+	if ( msg.ReadData( buffer, endIndex ) != endIndex ) {
+		common->Warning( "idMsgQueue::ReadFrom: truncated encoded queue" );
+		endIndex = 0;
+		return;
+	}
+
+	// ReadFrom is used for serialized unreliable-message queues, whose nested
+	// records are a little-endian ushort length followed by that payload.
+	// Validate every nested boundary now so Get cannot later walk uninitialized
+	// ring storage when a snapshot supplied a forged record size.
+	for ( int offset = 0; offset < endIndex; ) {
+		if ( endIndex - offset < 2 ) {
+			common->Warning( "idMsgQueue::ReadFrom: truncated nested record header" );
+			msg.MarkReadOverflowed();
+			Init( 0 );
+			return;
+		}
+		const int recordSize = buffer[ offset ] | ( buffer[ offset + 1 ] << 8 );
+		offset += 2;
+		if ( recordSize <= 0 || recordSize > endIndex - offset ) {
+			common->Warning( "idMsgQueue::ReadFrom: invalid nested record size %d", recordSize );
+			msg.MarkReadOverflowed();
+			Init( 0 );
+			return;
+		}
+		offset += recordSize;
+	}
 }
 
 /*

@@ -1016,35 +1016,48 @@ rvPhysics_Particle::ReadFromSnapshot
 ================
 */
 void rvPhysics_Particle::ReadFromSnapshot( const idBitMsgDelta &msg ) {
-	current.atRest = msg.ReadLong();
-	current.onGround = ( msg.ReadBits( 1 ) != 0 );
-	current.origin[0] = msg.ReadFloat();
-	current.origin[1] = msg.ReadFloat();
-	current.origin[2] = msg.ReadFloat();
+	particlePState_t decoded;
+	if ( !DecodeSnapshotState( msg, decoded ) ) {
+		return;
+	}
+	ApplySnapshotState( decoded );
+}
+
+bool rvPhysics_Particle::DecodeSnapshotState( const idBitMsgDelta &msg, particlePState_t &decoded ) const {
+	decoded = current;
+	decoded.atRest = msg.ReadLong();
+	decoded.onGround = ( msg.ReadBits( 1 ) != 0 );
+	decoded.origin[0] = msg.ReadFloat();
+	decoded.origin[1] = msg.ReadFloat();
+	decoded.origin[2] = msg.ReadFloat();
 //	current.velocity[0] = msg.ReadFloat( PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
 //	current.velocity[1] = msg.ReadFloat( PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
 //	current.velocity[2] = msg.ReadFloat( PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
-	current.velocity[0] = msg.ReadDeltaFloat( 0.0f );
-	current.velocity[1] = msg.ReadDeltaFloat( 0.0f );
-	current.velocity[2] = msg.ReadDeltaFloat( 0.0f );
+	decoded.velocity[0] = msg.ReadDeltaFloat( 0.0f );
+	decoded.velocity[1] = msg.ReadDeltaFloat( 0.0f );
+	decoded.velocity[2] = msg.ReadDeltaFloat( 0.0f );
 //	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f, PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
 //	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f, PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
 //	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f, PRT_VELOCITY_EXPONENT_BITS, PRT_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f );
-	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f );
-	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f );
+	decoded.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f );
+	decoded.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f );
+	decoded.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f );
 
 	if ( msg.ReadBits ( 1 ) ) {
 		idCQuat localQuat;
 		localQuat.x = msg.ReadFloat( );
 		localQuat.y = msg.ReadFloat( );
 		localQuat.z = msg.ReadFloat( );
-		current.localOrigin[0] = msg.ReadDeltaFloat( current.origin[0] );
-		current.localOrigin[1] = msg.ReadDeltaFloat( current.origin[1] );
-		current.localOrigin[2] = msg.ReadDeltaFloat( current.origin[2] );
-		current.localAxis = localQuat.ToMat3();
+		decoded.localOrigin[0] = msg.ReadDeltaFloat( decoded.origin[0] );
+		decoded.localOrigin[1] = msg.ReadDeltaFloat( decoded.origin[1] );
+		decoded.localOrigin[2] = msg.ReadDeltaFloat( decoded.origin[2] );
+		decoded.localAxis = localQuat.ToMat3();
 	}
+	return !msg.IsReadOverflowed();
+}
 
+void rvPhysics_Particle::ApplySnapshotState( const particlePState_t &decoded ) {
+	current = decoded;
 	if ( clipModel ) {
 // RAVEN BEGIN
 // ddynerman: multiple clip worlds

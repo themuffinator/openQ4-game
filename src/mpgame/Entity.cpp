@@ -1845,9 +1845,8 @@ bool idEntity::CanInterpolatePresentationPose( void ) const {
 ================
 idEntity::SamplePresentationPose
 
-Capture one authoritative 60 Hz sample.  Returns true when this entity should be
-re-anchored on presentation frames, which requires that it actually moved and
-that the two samples are a single continuous tic apart.
+Capture one authoritative 60 Hz sample.  Roots join only when they moved over
+a continuous tic; an active skeletal animation also joins while its root rests.
 ================
 */
 bool idEntity::SamplePresentationPose( void ) {
@@ -1859,8 +1858,17 @@ bool idEntity::SamplePresentationPose( void ) {
 		return false;
 	}
 
+	idAnimator *presentationAnimator = GetAnimator();
+	bool presentationAnimationActive = presentationAnimator != NULL &&
+		( presentationAnimator->IsAnimating( gameLocal.GetPreviousTime(), true ) ||
+		  presentationAnimator->IsAnimating( gameLocal.time, true ) );
+	for ( rvClientEntity *cent = clientEntities.Next(); !presentationAnimationActive && cent != NULL; cent = cent->bindNode.Next() ) {
+		presentationAnimationActive = cent->HasPresentationAnimation( gameLocal.GetPreviousTime(), gameLocal.time );
+	}
+
 	if ( presentationPoseTime == gameLocal.time ) {
-		return CanInterpolatePresentationPose();
+		return CanInterpolatePresentationPose() ||
+			( presentationPoseCanInterpolate && presentationAnimationActive );
 	}
 
 	// Sample what the renderer was actually told, not the physics pose.  An
@@ -1887,13 +1895,19 @@ bool idEntity::SamplePresentationPose( void ) {
 		// At rest.  Most of a map is in this branch every tic, so it stays ahead of
 		// the angle math below, and an entity that has just come to rest hands its
 		// last interpolated pose back here.
+		const int deltaTime = gameLocal.time - presentationPoseTime;
+		const int maxSequentialDelta = static_cast<int>( idMath::Ceil( common->GetUserCmdMsecFloat() ) );
+		const bool sequentialFrame = deltaTime > 0 && deltaTime <= maxSequentialDelta;
 		presentationPrevOrigin	= presentationCurOrigin;
 		presentationPrevAxis	= presentationCurAxis;
 		presentationPoseTime	= gameLocal.time;
 		presentationPoseMoved	= false;
-		presentationPoseCanInterpolate = false;
-		RestoreAuthoritativePresentationPose();
-		return false;
+		presentationPoseCanInterpolate =
+			gameLocal.GetMHz() == common->GetUserCmdHz() && sequentialFrame;
+		if ( !presentationPoseCanInterpolate || !presentationAnimationActive ) {
+			RestoreAuthoritativePresentationPose();
+		}
+		return presentationPoseCanInterpolate && presentationAnimationActive;
 	}
 
 	const int deltaTime = gameLocal.time - presentationPoseTime;
@@ -1926,14 +1940,16 @@ bool idEntity::SamplePresentationPose( void ) {
 		presentationPoseMoved	= false;
 	}
 
-	if ( !CanInterpolatePresentationPose() ) {
+	if ( !CanInterpolatePresentationPose() &&
+		 !( presentationPoseCanInterpolate && presentationAnimationActive ) ) {
 		// an entity that comes to rest may never set TH_UPDATEVISUALS again, so
 		// the last interpolated pose has to be handed back explicitly or it
 		// stays in the renderer a fraction of a tic behind where it belongs
 		RestoreAuthoritativePresentationPose();
 	}
 
-	return CanInterpolatePresentationPose();
+	return CanInterpolatePresentationPose() ||
+		( presentationPoseCanInterpolate && presentationAnimationActive );
 }
 
 /*
@@ -1963,8 +1979,20 @@ transform changes, so the renderer keeps the model-space snapshot it built.
 void idEntity::UpdatePresentationPose( void ) {
 	idVec3 interpolatedOrigin;
 	idMat3 interpolatedAxis;
+	const bool hasInterpolatedRoot = GetPresentationPose( interpolatedOrigin, interpolatedAxis );
 
-	if ( !GetPresentationPose( interpolatedOrigin, interpolatedAxis ) ) {
+	idAnimator *animator = GetAnimator();
+	idJointMat *presentationJoints = NULL;
+	const int presentationTime = gameLocal.GetPresentationAnimationTimeMsec();
+	bool hasPresentationJoints = false;
+	if ( animator != NULL && presentationTime >= 0 && renderEntity.hModel != NULL ) {
+		// Pull the authoritative joints current before taking the isolated draw
+		// sample.  This is the work the normal renderer callback would do later.
+		animator->CreateFrame( gameLocal.time, false );
+		hasPresentationJoints = animator->CreatePresentationFrame( presentationTime, &presentationJoints );
+	}
+
+	if ( !hasInterpolatedRoot && !hasPresentationJoints && clientEntities.IsListEmpty() ) {
 		return;
 	}
 
@@ -1973,19 +2001,32 @@ void idEntity::UpdatePresentationPose( void ) {
 
 	// The samples are already the composed visual transform, so the
 	// physics-to-visual step must not be applied a second time here.
-	renderEntity.origin = interpolatedOrigin;
-	renderEntity.axis = interpolatedAxis;
+	if ( hasInterpolatedRoot ) {
+		renderEntity.origin = interpolatedOrigin;
+		renderEntity.axis = interpolatedAxis;
+	}
+
+	renderEntity_t presentationRenderEntity = renderEntity;
+	if ( hasPresentationJoints ) {
+		presentationRenderEntity.callback = NULL;
+		presentationRenderEntity.numJoints = animator->NumJoints();
+		presentationRenderEntity.joints = presentationJoints;
+		presentationRenderEntity.hModel->BoundsFromJoints( presentationJoints, presentationRenderEntity.bounds );
+	}
 
 	presentationPoseHeld = true;
 	if ( modelDefHandle != -1 && renderEntity.hModel && !IsHidden() ) {
-		gameRenderWorld->UpdateEntityDef( modelDefHandle, &renderEntity );
+		gameRenderWorld->UpdateEntityDef( modelDefHandle, &presentationRenderEntity );
 		presentationPosePushed = true;
 	}
 	if ( !clientEntities.IsListEmpty() ) {
-		UpdatePresentationClientEntities();
+		UpdatePresentationClientEntities( presentationTime );
 		presentationPosePushed = true;
 	}
 	presentationPoseHeld = false;
+	if ( animator != NULL ) {
+		animator->ClearPresentationFrame();
+	}
 
 	renderEntity.origin = authoritativeOrigin;
 	renderEntity.axis = authoritativeAxis;
@@ -2005,7 +2046,7 @@ void idEntity::RestoreAuthoritativePresentationPose( void ) {
 	if ( modelDefHandle != -1 && renderEntity.hModel && !IsHidden() ) {
 		gameRenderWorld->UpdateEntityDef( modelDefHandle, &renderEntity );
 	}
-	UpdatePresentationClientEntities();
+	UpdatePresentationClientEntities( gameLocal.time );
 }
 
 /*
@@ -2018,13 +2059,13 @@ re-anchoring them here keeps them locked to what is on screen instead of to the
 last authoritative tic.
 ================
 */
-void idEntity::UpdatePresentationClientEntities( void ) {
+void idEntity::UpdatePresentationClientEntities( int presentationTime ) {
 	rvClientEntity *cent;
 	rvClientEntity *next;
 
 	for ( cent = clientEntities.Next(); cent != NULL; cent = next ) {
 		next = cent->bindNode.Next();
-		cent->UpdatePresentationTransform();
+		cent->UpdatePresentationTransform( presentationTime );
 	}
 }
 
@@ -6156,11 +6197,22 @@ idEntity::ReadBindFromSnapshot
 ================
 */
 void idEntity::ReadBindFromSnapshot( const idBitMsgDelta &msg ) {
-	int bindInfo, bindEntityNum, bindPos;
+	const int bindInfo = DecodeBindSnapshotInfo( msg );
+	if ( msg.IsReadOverflowed() ) {
+		return;
+	}
+	ApplyBindSnapshotInfo( bindInfo );
+}
+
+int idEntity::DecodeBindSnapshotInfo( const idBitMsgDelta &msg ) const {
+	return msg.ReadBits( GENTITYNUM_BITS + 3 + 9 );
+}
+
+void idEntity::ApplyBindSnapshotInfo( int bindInfo ) {
+	int bindEntityNum, bindPos;
 	bool bindOrientated;
 	idEntity *master;
 
-	bindInfo = msg.ReadBits( GENTITYNUM_BITS + 3 + 9 );
 	bindEntityNum = bindInfo & ( ( 1 << GENTITYNUM_BITS ) - 1 );
 
 	if ( bindEntityNum != ENTITYNUM_NONE ) {
@@ -6929,6 +6981,24 @@ bool idAnimatedEntity::GetJointWorldTransform( jointHandle_t jointHandle, int cu
 	}
 
 	if ( !animator.GetJointTransform( jointHandle, currentTime, offset, axis ) ) {
+		return false;
+	}
+
+	ConvertLocalToWorldTransform( offset, axis );
+	return true;
+}
+
+/*
+=====================
+idAnimatedEntity::GetPresentationJointWorldTransform
+
+Read the already-prepared draw-only joints while UpdatePresentationPose holds
+the matching root transform.  Never evaluates animation or changes game state.
+=====================
+*/
+bool idAnimatedEntity::GetPresentationJointWorldTransform( jointHandle_t jointHandle, idVec3 &offset, idMat3 &axis ) {
+	if ( !presentationPoseHeld || gameLocal.GetPresentationAnimationTimeMsec() < 0 ||
+		 !animator.GetPresentationJointTransform( jointHandle, offset, axis ) ) {
 		return false;
 	}
 

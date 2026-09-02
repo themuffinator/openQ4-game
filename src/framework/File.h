@@ -125,6 +125,11 @@ public:
 	virtual void			ReadSyncId(const char* detail = "unspecified", const char* classname = NULL) { }
 // jmarshall end
 
+	// Append-only memory-file staging hooks.  Keeping these after the complete
+	// historical idFile vtable preserves old game-module dispatch positions.
+	virtual void			MakeReadOnly( void ) {}
+	virtual const char *	GetDataPtr( void ) const { return NULL; }
+
 	template<class type> ID_INLINE size_t ReadBig(type& c) {
 		size_t r = Read(&c, sizeof(c));
 		BigRevBytes(&c, sizeof(c), 1);
@@ -181,7 +186,7 @@ public:
 							// set data for reading
 	void					SetData( const char *data, int length );
 							// returns const pointer to the memory buffer
-	const char *			GetDataPtr( void ) const { return filePtr; }
+	virtual const char *	GetDataPtr( void ) const { return filePtr; }
 							// set the file granularity
 	void					SetGranularity( int g ) { assert( g > 0 ); granularity = g; }
 

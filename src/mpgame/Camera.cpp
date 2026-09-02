@@ -1920,20 +1920,30 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 		lastFrame = frame;
 	}
 
-	if ( g_debugCinematic.GetBool() ) {
-		int prevFrameTime	= ( gameLocal.time - starttime - gameLocal.msec ) * cameraDef->GetAnim(1)->GetFrameRate();
-		int prevFrame		= prevFrameTime / 1000;
-		int prevCut;
-
-		prevCut = 0;
-		for( i = 0; i < cameraDef->GetAnim(1)->NumCuts(); i++ ) {
-			if ( prevFrame < cameraDef->GetAnim(1)->GetCut( i ) ) {
-				break;
-			}
-			prevFrame++;
-			prevCut++;
+	// Publish authored camera cuts through the existing renderer contract so
+	// temporal reconstruction rejects history even when a cut happens to stay
+	// inside the geometric camera-discontinuity thresholds.
+	int prevFrameTime;
+	int prevFrame;
+	if ( cameraDef->GetAnim(1)->GetFrameRate() == gameLocal.GetMHz() ) {
+		prevFrameTime = gameLocal.time - starttime - gameLocal.msec;
+		prevFrame = prevFrameTime / gameLocal.msec;
+	} else {
+		prevFrameTime = ( gameLocal.time - starttime - gameLocal.msec )
+			* cameraDef->GetAnim(1)->GetFrameRate();
+		prevFrame = prevFrameTime / 1000;
+	}
+	int prevCut = 0;
+	for( i = 0; i < cameraDef->GetAnim(1)->NumCuts(); i++ ) {
+		if ( prevFrame < cameraDef->GetAnim(1)->GetCut( i ) ) {
+			break;
 		}
+		prevFrame++;
+		prevCut++;
+	}
+	view->forceUpdate = prevCut != cut;
 
+	if ( g_debugCinematic.GetBool() ) {
 		if ( prevCut != cut ) {
 			gameLocal.Printf( "%d: '%s' cut %d\n", gameLocal.framenum, GetName(), cut );
 		}

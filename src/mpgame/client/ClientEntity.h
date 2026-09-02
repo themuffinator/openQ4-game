@@ -20,7 +20,8 @@ public:
 
 	virtual void		Present				( void );
 	virtual void		Think				( void );
-	virtual void		UpdatePresentationTransform	( void );
+	virtual void		UpdatePresentationTransform	( int presentationTime );
+	virtual bool		HasPresentationAnimation	( int, int ) const { return false; }
 	virtual idPhysics*	GetPhysics			( void ) const;
 	virtual bool		Collide				( const trace_t &collision, const idVec3 &velocity );
 
@@ -60,7 +61,7 @@ protected:
 
 	void				RunPhysics			( void );
 
-	virtual void		UpdateBind			( void );
+	virtual void		UpdateBind			( int presentationTime = -1 );
 	void				UpdateSound			( void );
 
 public:

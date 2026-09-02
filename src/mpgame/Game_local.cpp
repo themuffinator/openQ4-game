@@ -371,6 +371,8 @@ void idGameLocal::Clear( void ) {
 	presentationClockGameTime = -1;
 	presentationClockRealTime = 0;
 	presentationClockLastTime = -1;
+	presentationSceneFraction = -1.0f;
+	presentationAnimationTime = -1;
 	autoExecAfterMapLoadStartTime = 0;
 	autoExecAfterMapLoadPending = false;
 	autoExecAfterMapLoadWaitingLogged = false;
@@ -4680,9 +4682,34 @@ sample between authoritative game tics.
 ================
 */
 void idGameLocal::PreparePlayerSceneForRender( idPlayer *player ) {
+	presentationSceneFraction = -1.0f;
+	presentationAnimationTime = -1;
 	if ( player == NULL || GetDemoState() == DEMO_PLAYING || IsTimeDemo() ) {
 		return;
 	}
+
+	// Freeze one draw sample before CalculateRenderView() asks for the camera
+	// fraction.  Animation lives on the previous-to-current interval, whereas
+	// renderView.time is the current tic plus the same elapsed offset.
+	const int authoritativeInterval = Max( 0, time - previousTime );
+	presentationSceneFraction = GetPresentationInterpolationFraction();
+	const int maxSequentialInterval = static_cast<int>( idMath::Ceil( common->GetUserCmdMsecFloat() ) );
+	const bool sequentialInterval = authoritativeInterval > 0 && authoritativeInterval <= maxSequentialInterval &&
+		GetMHz() == common->GetUserCmdHz();
+	if ( sequentialInterval ) {
+		const int presentationOffset = idMath::Ftoi( authoritativeInterval * presentationSceneFraction + 0.5f );
+		presentationAnimationTime = idMath::ClampInt( previousTime, time, previousTime + presentationOffset );
+	} else {
+		presentationAnimationTime = time;
+	}
+	player->CalculateRenderView();
+	// The weapon's scope GUI is an in-world surface drawn with the 3D scene, so
+	// its yaw has to be current before that scene is rendered.  Updating it from
+	// DrawHUD set it during the 2D overlay, after R_RenderGuiSurf had already
+	// drawn the scope for this frame, which left the compass a frame behind the
+	// gun: invisible while the view is still, and a varying offset that shimmers
+	// and swings the rotated element out of its window while turning.
+	player->UpdateZoomGuiViewState();
 
 	// Movers and everything riding them share the camera's presentation time.
 	// Without this the eye is drawn interpolated while the lift under it is
@@ -4693,13 +4720,19 @@ void idGameLocal::PreparePlayerSceneForRender( idPlayer *player ) {
 	if ( player->IsPresentationViewInterpolated() ) {
 		UpdatePresentationEntityPoses();
 	} else {
+		presentationSceneFraction = -1.0f;
+		presentationAnimationTime = -1;
 		ClearPresentationEntityPoses();
 	}
 
-	player->CalculateRenderView();
 	if ( player->weaponViewModel.GetEntity() != NULL ) {
 		player->weaponViewModel->UpdatePresentationWeapon( player->CanShowWeaponViewmodel() );
 	}
+}
+
+void idGameLocal::EndPresentationSceneForRender( void ) {
+	presentationSceneFraction = -1.0f;
+	presentationAnimationTime = -1;
 }
 
 /*
@@ -4742,6 +4775,7 @@ bool idGameLocal::Draw( int clientNum ) {
 // RAVEN END
 	// render the scene
 	player->playerView.RenderPlayerView( player->hud );
+	EndPresentationSceneForRender();
 
 // RAVEN BEGIN
 // bdube: debugging HUD
@@ -4815,7 +4849,10 @@ void idGameLocal::CheckAutoExecAfterMapLoad( void ) {
 		common->Printf( "AutoExecAfterMapLoad: executed %s at %d ms\n",
 			execPath,
 			nowMs - autoExecAfterMapLoadStartTime );
-		cmdSystem->BufferCommandArgs( CMD_EXEC_NOW, execArgs );
+		// Draw() also services this hook. Executing the cfg synchronously from
+		// there can make commands such as screenshot recursively enter the
+		// session render path before the current frame has completed.
+		cmdSystem->BufferCommandArgs( CMD_EXEC_APPEND, execArgs );
 	} else {
 		common->Warning( "AutoExecAfterMapLoad: skipped unsafe cfg path '%s'", execPath ? execPath : "" );
 	}
@@ -8294,8 +8331,13 @@ float idGameLocal::GetPresentationInterpolationFraction( void ) const {
 		return 1.0f;
 	}
 
+	if ( presentationSceneFraction >= 0.0f ) {
+		return presentationSceneFraction;
+	}
+
+	const int presentationOffset = GetPresentationTimeMsec() - time;
 	return idMath::ClampFloat( 0.0f, 1.0f,
-		static_cast<float>( GetPresentationTimeMsec() - time ) / ticMsec );
+		static_cast<float>( presentationOffset ) / ticMsec );
 }
 
 /*
@@ -8321,31 +8363,56 @@ void idGameLocal::ClearPresentationEntityPoses( void ) {
 ================
 idGameLocal::SamplePresentationEntityPoses
 
-Take the authoritative 60 Hz transform sample for everything the renderer can
-see, and rebuild the list of entities that moved this tic.  Run once per game
-frame, after all thinking and pushing is finished.
+Take the authoritative 60 Hz transform sample for entities that can have
+changed this tic. Keep last frame's presentation members until they settle so
+their authoritative pose is restored, then admit newly active movers. Run once
+per game frame, after all thinking and pushing is finished.
 ================
 */
 void idGameLocal::SamplePresentationEntityPoses( void ) {
 	idEntity *ent;
 	idEntity *next;
 
-	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
-		next = ent->presentationNode.Next();
-		ent->presentationNode.Remove();
-	}
-
-	if ( !g_presentationInterpolation.GetBool() || GetDemoState() == DEMO_PLAYING || IsTimeDemo() ) {
-		for ( ent = spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
-			ent->DisablePresentationPose();
-		}
+	// Cinematic fast-forward can execute many thousands of simulation tics in a
+	// single host frame. None of those intermediate poses is presented. Avoid a
+	// full spawned-entity walk for every skipped tic and discard any pose that
+	// was pushed by the last visible frame.
+	if ( skipCinematic || !g_presentationInterpolation.GetBool() || GetDemoState() == DEMO_PLAYING || IsTimeDemo() ) {
+		ClearPresentationEntityPoses();
 		return;
 	}
 
-	for ( ent = spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
-		if ( ent->SamplePresentationPose() ) {
-			ent->presentationNode.AddToEnd( presentationEntities );
+	// A member that moved or animated last frame must be sampled once more even
+	// if it deactivated, otherwise its final interpolated pose could remain in
+	// the render world. Remove it only after SamplePresentationPose restores or
+	// rejects it.
+	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
+		next = ent->presentationNode.Next();
+		if ( !ent->SamplePresentationPose() ) {
+			ent->presentationNode.Remove();
 		}
+	}
+
+	// Active entities are the authoritative roots that can move, animate, or
+	// update visuals this tic. An active physics team master also moves bound
+	// team members from its own RunPhysics walk, even when those members have no
+	// independent think flags, so include that bounded chain. Active slaves are
+	// skipped when their active master already owns the chain; an independently
+	// active slave of an inactive master still samples itself.
+	for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
+		idEntity *teamMaster = ent->GetTeamMaster();
+		if ( teamMaster != NULL && teamMaster != ent && teamMaster->IsActive() ) {
+			continue;
+		}
+		idEntity *candidate = ent;
+		do {
+			if ( !candidate->presentationNode.InList()
+					&& candidate->SamplePresentationPose() ) {
+				candidate->presentationNode.AddToEnd( presentationEntities );
+			}
+			candidate = teamMaster == ent
+				? candidate->GetNextTeamEntity() : NULL;
+		} while ( candidate != NULL );
 	}
 }
 
@@ -8361,9 +8428,64 @@ void idGameLocal::UpdatePresentationEntityPoses( void ) {
 	idEntity *ent;
 	idEntity *next;
 
+	int updated = 0;
 	for ( ent = presentationEntities.Next(); ent != NULL; ent = next ) {
 		next = ent->presentationNode.Next();
 		ent->UpdatePresentationPose();
+		updated++;
+	}
+
+	// Whether the local player's own body reached the presentation clock is not
+	// observable from outside: in first person its surfaces are suppressed, so the
+	// only witness is its shadow.  Report it directly rather than inferring it.
+	if ( g_showPresentationPose.GetBool() ) {
+		idPlayer *localPlayer = GetLocalPlayer();
+		if ( localPlayer != NULL ) {
+			// Per FRAME, not per tic: the point is to see whether the drawn body
+			// advances between authoritative tics or holds still and then jumps.
+			// The root comes from the interpolated presentation pose; a joint mod is
+			// whatever CreatePresentationFrame handed the skeleton this frame.
+			idVec3 rootOrigin;
+			idMat3 rootAxis;
+			const bool haveRoot = localPlayer->GetPresentationPose( rootOrigin, rootAxis );
+			float jointModYaw = 0.0f;
+			int jointModCount = 0;
+			idAnimator *animator = localPlayer->GetAnimator();
+			if ( animator != NULL ) {
+				jointModCount = animator->NumJointMods();
+				int jointnum = 0;
+				idMat3 modMat;
+				if ( animator->GetJointModDiagnostic( 0, jointnum, modMat ) ) {
+					jointModYaw = modMat.ToAngles().yaw;
+				}
+			}
+			// The drawn skeleton itself: if this is constant between frames inside a
+			// tic then the presentation pose never reaches the model, whatever the
+			// root and the modifier are doing.
+			idVec3 drawnJoint;
+			bool haveDrawnJoint = false;
+			if ( animator != NULL ) {
+				const int probeJoint = animator->NumJoints() > 4 ? 4 : 0;
+				haveDrawnJoint = animator->GetPresentationJointDiagnostic( probeJoint, drawnJoint );
+			}
+			Printf( "presentationFrame: f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f animT=%d drawn=%d %.3f %.3f %.3f\n",
+				GetPresentationInterpolationFraction(),
+				haveRoot ? rootAxis.ToAngles().yaw : 0.0f,
+				haveRoot ? 1 : 0, jointModCount, jointModYaw,
+				GetPresentationAnimationTimeMsec(),
+				haveDrawnJoint ? 1 : 0, drawnJoint.x, drawnJoint.y, drawnJoint.z );
+		}
+		if ( localPlayer != NULL && time != lastPresentationPoseReportTime ) {
+			lastPresentationPoseReportTime = time;
+			Printf( "presentation: entities=%d localPlayer(listed=%d allows=%d moved=%d canInterp=%d) fraction=%.3f animTime=%d\n",
+				updated,
+				localPlayer->presentationNode.InList() ? 1 : 0,
+				localPlayer->AllowsPresentationInterpolation() ? 1 : 0,
+				localPlayer->PresentationPoseMoved() ? 1 : 0,
+				localPlayer->CanInterpolatePresentationPose() ? 1 : 0,
+				GetPresentationInterpolationFraction(),
+				GetPresentationAnimationTimeMsec() );
+		}
 	}
 }
 

@@ -105,12 +105,12 @@ screen instead of to the last authoritative tic.  Lifetime, sound and
 simulation deliberately stay in Think() on the game clock.
 ================
 */
-void rvClientEntity::UpdatePresentationTransform ( void ) {
+void rvClientEntity::UpdatePresentationTransform ( int presentationTime ) {
 	if ( !bindMaster ) {
 		return;
 	}
 
-	UpdateBind();
+	UpdateBind( presentationTime );
 	Present();
 }
 
@@ -187,13 +187,17 @@ void rvClientEntity::SetAxis( const idMat3& axis ) {
 rvClientEntity::UpdateBind
 ================
 */
-void rvClientEntity::UpdateBind ( void ) {
+void rvClientEntity::UpdateBind ( int presentationTime ) {
 	if ( !bindMaster ) {
 		return;
 	}
 
 	if ( bindJoint != INVALID_JOINT ) {
-		static_cast<idAnimatedEntity*>(bindMaster.GetEntity())->GetJointWorldTransform ( bindJoint, gameLocal.time, worldOrigin, worldAxis );
+		idAnimatedEntity *animatedMaster = static_cast<idAnimatedEntity*>( bindMaster.GetEntity() );
+		if ( presentationTime < 0 ||
+			 !animatedMaster->GetPresentationJointWorldTransform( bindJoint, worldOrigin, worldAxis ) ) {
+			animatedMaster->GetJointWorldTransform( bindJoint, gameLocal.time, worldOrigin, worldAxis );
+		}
 	} else {
 		bindMaster->GetPosition( worldOrigin, worldAxis );
 		//if ( !bindMaster->GetPhysicsToVisualTransform( worldOrigin, worldAxis ) ) {

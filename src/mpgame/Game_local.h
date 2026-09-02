@@ -605,6 +605,8 @@ public:
 	mutable int			presentationClockGameTime;	// transient game-time anchor for render interpolation
 	mutable int			presentationClockRealTime;	// transient real-time anchor for render interpolation
 	mutable int			presentationClockLastTime;	// transient monotonic presentation result
+	float					presentationSceneFraction;	// frozen camera/root fraction for the active Draw
+	int					presentationAnimationTime;	// previous-to-current skeletal sample held only during Draw
 	int						autoExecAfterMapLoadStartTime;
 	bool					autoExecAfterMapLoadPending;
 	bool					autoExecAfterMapLoadWaitingLogged;
@@ -865,6 +867,8 @@ public:
 // RAVEN END
 	int						GetSpawnId( const idEntity *ent ) const;
 	int						GetPresentationTimeMsec( void ) const;
+	int						GetPresentationAnimationTimeMsec( void ) const { return presentationAnimationTime; }
+	void					EndPresentationSceneForRender( void );
 	float					GetPresentationInterpolationFraction( void ) const;
 	idMat3					InterpolatePresentationAxis( const idMat3 &from, const idMat3 &to, float fraction ) const;
 	void					SamplePresentationEntityPoses( void );
@@ -967,6 +971,7 @@ public:
 	int						GetTime() const { return time; }
 	int						GetMSec() const { return msec; }
 	int						GetMHz() const { return mHz; }
+	int						lastPresentationPoseReportTime;	// g_showPresentationPose throttle
 
 	int						GetNextClientNum( int current ) const;
 	idPlayer *				GetClientByNum( int current ) const;

@@ -22,6 +22,7 @@
 #if defined( _MD5R_SUPPORT ) || defined( Q4SDK_MD5R )
 class rvMesh;
 #endif
+struct gpuSkinningVertex_s;
 // RAVEN END
 
 // shared between the renderer, game, and Maya export DLL
@@ -192,6 +193,19 @@ typedef struct srfTriangles_s {
 	char						description[64];
 #endif
 // RAVEN END
+
+	// Immutable model-owned source data plus a snapshot-owned canonical joint
+	// palette. The allocation pointer is non-NULL only for the owning tri.
+	const idDrawVert *			gpuSkinningBindPoseVerts;
+	const gpuSkinningVertex_s *gpuSkinningVerts;
+	int							numGpuSkinningVerts;
+	float *						gpuSkinningJointPalette;
+	float *						gpuSkinningJointPaletteAlloc;
+	int							numGpuSkinningJoints;
+	int							numGpuSkinningJointPaletteAllocJoints;
+	unsigned int				gpuSkinningPaletteGeneration;
+	int							gpuSkinningFallbackReason;
+	bool						gpuSkinningSignedWeights;
 } srfTriangles_t;
 
 static const int STF_SOFT_PARTICLE_CANDIDATE = 1 << 0;

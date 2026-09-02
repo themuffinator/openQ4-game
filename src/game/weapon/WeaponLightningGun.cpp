@@ -597,7 +597,7 @@ void rvWeaponLightningGun::UpdatePresentationEffects( void ) {
 	trailEffectView->SetOrigin( origin );
 	trailEffectView->SetAxis( dir.ToMat3() );
 	trailEffectView->SetEndOrigin( currentPath.origin );
-	trailEffectView->UpdatePresentationTransform();
+	trailEffectView->UpdatePresentationTransform( gameLocal.GetPresentationAnimationTimeMsec() );
 }
 
 /*

@@ -96,45 +96,17 @@ struct openQ4SaveGameSnapshot_t {
 	const char *wireABI;
 };
 
-static const openQ4SaveGameSnapshot_t OPENQ4_SAVEGAME_V2_SNAPSHOTS[] = {
-	{ 639, "d64f5bd29149262e67ce65107ea44b3f10af22011e7af354f23ca01550210fde", 404, "windows-msvcabi-x64-le-raw1" },
-	{ 614, "0c27fa5c6ef48b1bfe44c7be82b8a696772af4625eeefeed25de27da9640dd3f", 404, "windows-msvcabi-x64-le-raw1" },
-	{ 556, "871e5811e1732be750b18374b3d537aa38a91a050fb94cef847e2e3d39769cc2", 218, "windows-msvcabi-x64-le-raw1" },
-	{ 544, "82b545ffb5c9d8d27239eb8d1ed7eb5a22db1c40410dec4f3752f6f90fe76a60", 218, "windows-msvcabi-x64-le-raw1" },
-	{ 544, "ab567aef25905e8cf52e191523bc591f671b8cee3e63939a67af692bde3de446", 218, "windows-msvcabi-x64-le-raw1" },
-	{ 544, "9b26849ccdc3652aad892fdeeb5f219b631119fe601de00eb691fb5b4c13e02f", 218, "windows-msvcabi-x64-le-raw1" }
-};
-
-// Version 3 was already public when the player liquid-state fields were added.
-// Keep the exact pre-field release snapshot readable without guessing between
-// layouts for arbitrary source revisions.
-static const openQ4SaveGameSnapshot_t OPENQ4_SAVEGAME_V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOTS[] = {
-	{ 1, "19351be39d2d4077a74294c0442707ef9565fc7a2fa9af9b81e05fc9aca8b220", 404, "windows-msvcabi-x64-le-raw1" }
-};
-
-static bool SaveGame_IsSupportedV2Snapshot( int build, const idStr &sourceHash, int sourceFileCount ) {
-	for ( int i = 0; i < static_cast<int>( sizeof( OPENQ4_SAVEGAME_V2_SNAPSHOTS ) / sizeof( OPENQ4_SAVEGAME_V2_SNAPSHOTS[0] ) ); i++ ) {
-		const openQ4SaveGameSnapshot_t &snapshot = OPENQ4_SAVEGAME_V2_SNAPSHOTS[i];
-		if ( build == snapshot.build && sourceFileCount == snapshot.sourceFileCount &&
-			 sourceHash.Icmp( snapshot.sourceHash ) == 0 &&
-			 idStr::Icmp( OpenQ4SaveGameWireABI(), snapshot.wireABI ) == 0 ) {
-			return true;
-		}
-	}
-	return false;
-}
-
-static bool SaveGame_IsV3PrePlayerLiquidFieldsSnapshot( int build, const idStr &sourceHash, int sourceFileCount ) {
-	for ( int i = 0; i < static_cast<int>( sizeof( OPENQ4_SAVEGAME_V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOTS ) / sizeof( OPENQ4_SAVEGAME_V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOTS[0] ) ); i++ ) {
-		const openQ4SaveGameSnapshot_t &snapshot = OPENQ4_SAVEGAME_V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOTS[i];
-		if ( build == snapshot.build && sourceFileCount == snapshot.sourceFileCount &&
-			 sourceHash.Icmp( snapshot.sourceHash ) == 0 &&
-			 idStr::Icmp( OpenQ4SaveGameWireABI(), snapshot.wireABI ) == 0 ) {
-			return true;
-		}
-	}
-	return false;
-}
+// The two player liquid fields were added by different builds, so a save can
+// legitimately carry the first and not the second. These are the engine build
+// numbers of the commits that introduced each write, and a payload is only read
+// as carrying a field when it was produced at or after that build:
+//   swimSpeed                  openQ4-game 2cc5a61, 2026-08-13, build 661
+//   nextLiquidSurfaceSoundTime openQ4-game d06a09d, 2026-08-19, build 721
+// One boolean used to gate both against a single hard-coded v0.10 tuple, so every
+// save written between those builds read a field the file does not contain and
+// desynced the remainder of the restore.
+static const int OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_SWIM_SPEED = 661;
+static const int OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_LIQUID_SOUND = 721;
 
 static const int MAX_SAVEGAME_OBJECTS = MAX_GENTITIES + MAX_CENTITIES + 4096;
 static const int MAX_SAVEGAME_DICT_ENTRIES = 16384;
@@ -2638,15 +2610,17 @@ void idRestoreGame::ReadBuildNumber( void ) {
 	}
 
 	if ( openQ4SaveGameCompatibilityVersion == OPENQ4_SAVEGAME_PREVIOUS_COMPATIBILITY_VERSION ) {
-		if ( !SaveGame_IsSupportedV2Snapshot( buildNumber, openQ4SaveGameCompatibilityStamp, openQ4SaveGameCompatibilitySourceFileCount ) ) {
-			openQ4SaveGameCompatibilityError = va(
-				"unsupported v%d source snapshot %s (%d files), build %d",
-				openQ4SaveGameCompatibilityVersion,
-				openQ4SaveGameCompatibilityStamp.c_str(),
-				openQ4SaveGameCompatibilitySourceFileCount,
-				buildNumber );
-			return;
-		}
+		// No v2 snapshot has a verified decoder: every one that was tested against
+		// a real save desynced part way through the restore. The engine preflight
+		// already refuses these before a map is torn down; this is the second line
+		// of defence for a payload that reaches the game module anyway.
+		openQ4SaveGameCompatibilityError = va(
+			"v%d payload from build %d (%s, %d files) has no verified decoder",
+			openQ4SaveGameCompatibilityVersion,
+			buildNumber,
+			openQ4SaveGameCompatibilityStamp.c_str(),
+			openQ4SaveGameCompatibilitySourceFileCount );
+		return;
 	} else {
 		idStr savedWireABI;
 		ReadString( savedWireABI );
@@ -2806,19 +2780,34 @@ const char *idRestoreGame::GetOpenQ4SaveGameCompatibilityStamp( void ) const {
 
 /*
 =====================
-idRestoreGame::HasOpenQ4PlayerLiquidSaveFields
+idRestoreGame::HasOpenQ4PlayerSwimSpeedSaveField
 =====================
 */
-bool idRestoreGame::HasOpenQ4PlayerLiquidSaveFields( void ) const {
+bool idRestoreGame::HasOpenQ4PlayerSwimSpeedSaveField( void ) const {
+	return HasOpenQ4PlayerLiquidSaveFieldForBuild( OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_SWIM_SPEED );
+}
+
+/*
+=====================
+idRestoreGame::HasOpenQ4PlayerLiquidSoundSaveField
+=====================
+*/
+bool idRestoreGame::HasOpenQ4PlayerLiquidSoundSaveField( void ) const {
+	return HasOpenQ4PlayerLiquidSaveFieldForBuild( OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_LIQUID_SOUND );
+}
+
+/*
+=====================
+idRestoreGame::HasOpenQ4PlayerLiquidSaveFieldForBuild
+=====================
+*/
+bool idRestoreGame::HasOpenQ4PlayerLiquidSaveFieldForBuild( int firstBuildWithField ) const {
 	if ( !openQ4SaveGameHasCompatibilityStamp ||
 		 openQ4SaveGameCompatibilityVersion != OPENQ4_SAVEGAME_COMPATIBILITY_VERSION ) {
 		return false;
 	}
 
-	return !SaveGame_IsV3PrePlayerLiquidFieldsSnapshot(
-		buildNumber,
-		openQ4SaveGameCompatibilityStamp,
-		openQ4SaveGameCompatibilitySourceFileCount );
+	return buildNumber >= firstBuildWithField;
 }
 
 

@@ -3525,6 +3525,31 @@ void Cmd_ListMaps_f( const idCmdArgs& args ) {
 	gameLocal.mpGame.ListMaps();
 }
 
+static void Cmd_OpenQ4AssertMPClientActive_f( const idCmdArgs &args ) {
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	const bool inGame = player != NULL && gameLocal.mpGame.IsInGame( player->entityNumber );
+	const bool menuClosed = gameLocal.mpGame.GetCurrentMenu() == 0;
+	const bool disableHud = player != NULL && player->disableHud;
+	if ( player == NULL || player->spectating || player->wantSpectate || !inGame ||
+			!menuClosed || disableHud ) {
+		gameLocal.Error(
+			"openq4_assertMPClientActive failed: client=%d spectating=%d wantSpectate=%d ingame=%d menu=%d disableHud=%d",
+			player != NULL ? player->entityNumber : -1,
+			player != NULL && player->spectating ? 1 : 0,
+			player != NULL && player->wantSpectate ? 1 : 0,
+			inGame ? 1 : 0,
+			menuClosed ? 0 : 1,
+			disableHud ? 1 : 0
+		);
+		return;
+	}
+
+	gameLocal.Printf(
+		"OPENQ4_STOCK_BASELINE_MP_CLIENT_ACTIVE client=%d spectating=0 wantSpectate=0 ingame=1 menu=0 disableHud=0\n",
+		player->entityNumber
+	);
+}
+
 /*
 =================
 idGameLocal::InitConsoleCommands
@@ -3685,6 +3710,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "allready",				idMultiplayerGame::ForceReady_f,	CMD_FL_GAME,	"force all players ready" );
 	cmdSystem->AddCommand( "matchSeriesBind",		idMultiplayerGame::SeriesBind_f,	CMD_FL_GAME,	"bind a current Duel connection after series recovery: matchSeriesBind <a|b> <client slot>" );
 	cmdSystem->AddCommand( "matchBroadcaster",		idMultiplayerGame::Broadcaster_f,	CMD_FL_GAME,	"grant or revoke broadcaster observation for a current spectator: matchBroadcaster <client slot> <on|off>" );
+	cmdSystem->AddCommand( "openq4_assertMPClientActive", Cmd_OpenQ4AssertMPClientActive_f, CMD_FL_GAME | CMD_FL_CHEAT, "fail validation unless the local multiplayer player is active and not spectating" );
 
 	// localization help commands
 	cmdSystem->AddCommand( "nextGUI",				Cmd_NextGUI_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"teleport the player to the next func_static with a gui" );

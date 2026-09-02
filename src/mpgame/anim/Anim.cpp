@@ -13,40 +13,200 @@ namespace {
 
 static const unsigned int GENERATED_ANIM_MAGIC = 0x4134514f;	// OQ4A
 static const unsigned int GENERATED_ANIM_END_MAGIC = 0x4544514f;	// OQ4E
-static const unsigned int GENERATED_ANIM_VERSION = 1;
+static const unsigned int GENERATED_ANIM_VERSION = 3;
 static const int MAX_GENERATED_ANIM_FRAMES = 1 << 20;
 static const int MAX_GENERATED_ANIM_JOINTS = 4096;
+static const int MAX_GENERATED_ANIM_FRAME_RATE = 1000;
 static const long long MAX_GENERATED_ANIM_DATA_BYTES = (long long)512 * 1024 * 1024;
+static const int MAX_GENERATED_ANIM_RECORD_BYTES = 528 * 1024 * 1024;
 static const int GENERATED_ANIM_FLOAT_CHUNK = 4096;
+static const int GENERATED_ANIM_CRC_TRAILER_BYTES = 2 * sizeof( unsigned int );
+static const float GENERATED_ANIM_QUATERNION_EPSILON = 0.01f;
 
 struct generatedAnimSourceInfo_t {
 	int			length;
 	ID_TIME_T	timestamp;
 	int			containerChecksum;
-	idStr		fullPath;
+	unsigned int	contentChecksum;
+	idStr		normalizedPath;
 };
 
-static void GetGeneratedAnimPath( const char *filename, idStr &path ) {
-	idStr normalized = filename;
+static bool GeneratedAnimSegmentIsWindowsDevice( const char *segment, const int length ) {
+	int stemLength = 0;
+	while ( stemLength < length && segment[ stemLength ] != '.' ) {
+		++stemLength;
+	}
+	if ( stemLength == 3 ) {
+		return ( segment[ 0 ] == 'c' && segment[ 1 ] == 'o' && segment[ 2 ] == 'n' ) ||
+			( segment[ 0 ] == 'p' && segment[ 1 ] == 'r' && segment[ 2 ] == 'n' ) ||
+			( segment[ 0 ] == 'a' && segment[ 1 ] == 'u' && segment[ 2 ] == 'x' ) ||
+			( segment[ 0 ] == 'n' && segment[ 1 ] == 'u' && segment[ 2 ] == 'l' );
+	}
+	const bool portPrefix = stemLength >= 4 &&
+		( ( segment[ 0 ] == 'c' && segment[ 1 ] == 'o' && segment[ 2 ] == 'm' ) ||
+		  ( segment[ 0 ] == 'l' && segment[ 1 ] == 'p' && segment[ 2 ] == 't' ) );
+	if ( !portPrefix ) {
+		return false;
+	}
+
+	const unsigned char digit = static_cast<unsigned char>( segment[ 3 ] );
+	if ( stemLength == 4 ) {
+		return ( digit >= '1' && digit <= '9' ) || digit == 0xB9 || digit == 0xB2 || digit == 0xB3;
+	}
+
+	return stemLength == 5 && digit == 0xC2 &&
+		( static_cast<unsigned char>( segment[ 4 ] ) == 0xB9 ||
+		  static_cast<unsigned char>( segment[ 4 ] ) == 0xB2 ||
+		  static_cast<unsigned char>( segment[ 4 ] ) == 0xB3 );
+}
+
+static bool NormalizeGeneratedAnimSourcePath( const char *filename, idStr &normalized ) {
+	if ( filename == NULL || filename[ 0 ] == '\0' ) {
+		return false;
+	}
+	normalized = filename;
 	normalized.BackSlashesToSlashes();
 	normalized.ToLower();
+	if ( normalized.IsEmpty() || normalized[ 0 ] == '/' || normalized.Length() >= MAX_OSPATH ) {
+		return false;
+	}
+
+	int segmentStart = 0;
+	for ( int i = 0; i <= normalized.Length(); ++i ) {
+		const unsigned char c = i < normalized.Length() ?
+			(unsigned char)normalized[ i ] : (unsigned char)'\0';
+		if ( c != '\0' && ( c < 32 || c == 127 || c == ':' || c == '<' || c == '>' ||
+				c == '"' || c == '|' || c == '?' || c == '*' ) ) {
+			return false;
+		}
+		if ( c != '/' && c != '\0' ) {
+			continue;
+		}
+
+		const int segmentLength = i - segmentStart;
+		if ( segmentLength == 0 ||
+				( segmentLength == 1 && normalized[ segmentStart ] == '.' ) ||
+				( segmentLength == 2 && normalized[ segmentStart ] == '.' &&
+					normalized[ segmentStart + 1 ] == '.' ) ||
+				normalized[ segmentStart ] == ' ' ||
+				normalized[ i - 1 ] == '.' || normalized[ i - 1 ] == ' ' ||
+				GeneratedAnimSegmentIsWindowsDevice( normalized.c_str() + segmentStart, segmentLength ) ) {
+			return false;
+		}
+		segmentStart = i + 1;
+	}
+	return true;
+}
+
+static bool GetGeneratedAnimPath( const char *filename, idStr &path ) {
+	idStr normalized;
+	if ( !NormalizeGeneratedAnimSourcePath( filename, normalized ) ) {
+		path.Clear();
+		return false;
+	}
 	path = "generated/animations/";
 	path += normalized;
 	path += ".banim";
+	return path.Length() < MAX_OSPATH;
 }
 
 static bool GetGeneratedAnimSourceInfo( const char *filename, generatedAnimSourceInfo_t &info ) {
-	idFile *source = fileSystem->OpenFileRead( filename, false );
+	idStr logicalPath;
+	if ( !NormalizeGeneratedAnimSourcePath( filename, logicalPath ) ) {
+		return false;
+	}
+
+	idStr selectedPath = filename;
+	idFile *source = NULL;
+	if ( cvarSystem->GetCVarBool( "com_binaryRead" ) ) {
+		selectedPath.Append( Lexer::sCompiledFileSuffix );
+		source = fileSystem->OpenFileRead( selectedPath, false );
+	}
 	if ( source == NULL ) {
+		selectedPath = filename;
+		source = fileSystem->OpenFileRead( selectedPath, false );
+	}
+	if ( source == NULL ) {
+		return false;
+	}
+	if ( !NormalizeGeneratedAnimSourcePath( selectedPath, info.normalizedPath ) ) {
+		fileSystem->CloseFile( source );
 		return false;
 	}
 
 	info.length = source->Length();
 	info.timestamp = source->Timestamp();
 	info.containerChecksum = source->GetContainerChecksum();
-	info.fullPath = source->GetFullPath();
+	info.contentChecksum = 0;
+
+	bool valid = info.length >= 0;
+	if ( valid && info.containerChecksum == 0 ) {
+		uint32_t checksum = 0;
+		CRC32_InitChecksum( checksum );
+		byte buffer[ 16 * 1024 ];
+		int remaining = info.length;
+		while ( valid && remaining > 0 ) {
+			const int chunkBytes = Min( remaining, (int)sizeof( buffer ) );
+			const int readBytes = source->Read( buffer, chunkBytes );
+			valid = readBytes == chunkBytes;
+			if ( valid ) {
+				CRC32_UpdateChecksum( checksum, buffer, readBytes );
+				remaining -= readBytes;
+			}
+		}
+		if ( valid ) {
+			CRC32_FinishChecksum( checksum );
+			info.contentChecksum = checksum;
+		}
+	}
 	fileSystem->CloseFile( source );
-	return info.length >= 0;
+	return valid;
+}
+
+static bool GeneratedAnimFloatIsFinite( const float value ) {
+	return !FLOAT_IS_NAN( value );
+}
+
+static bool GeneratedAnimFloatsAreFinite( const float *values, const int count ) {
+	if ( count < 0 || ( count > 0 && values == NULL ) ) {
+		return false;
+	}
+	for ( int i = 0; i < count; ++i ) {
+		if ( !GeneratedAnimFloatIsFinite( values[ i ] ) ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static int GeneratedAnimComponentCount( const int animBits ) {
+	int bits = animBits & 63;
+	int count = 0;
+	while ( bits != 0 ) {
+		count += bits & 1;
+		bits >>= 1;
+	}
+	return count;
+}
+
+static bool CalculateGeneratedAnimLength( const int frameCount, const int frameRate, int &length ) {
+	if ( frameCount <= 0 || frameCount > MAX_GENERATED_ANIM_FRAMES ||
+			frameRate <= 0 || frameRate > MAX_GENERATED_ANIM_FRAME_RATE ) {
+		return false;
+	}
+	const long long numerator = (long long)( frameCount - 1 ) * 1000 + frameRate - 1;
+	const long long result = numerator / frameRate;
+	if ( result < 0 || result > 0x7fffffffLL ) {
+		return false;
+	}
+	length = (int)result;
+	return true;
+}
+
+static unsigned int ReadGeneratedAnimLittleUnsignedInt( const byte *bytes ) {
+	unsigned int value = 0;
+	memcpy( &value, bytes, sizeof( value ) );
+	return (unsigned int)LittleLong( (int)value );
 }
 
 static bool ReadGeneratedAnimString( idFile *file, idStr &value, int maxLength ) {
@@ -69,6 +229,12 @@ static bool ReadGeneratedAnimString( idFile *file, idStr &value, int maxLength )
 	if ( file->Read( &value[ 0 ], length ) != length ) {
 		value.Clear();
 		return false;
+	}
+	for ( int i = 0; i < length; ++i ) {
+		if ( value[ i ] == '\0' ) {
+			value.Clear();
+			return false;
+		}
 	}
 	return true;
 }
@@ -101,7 +267,7 @@ static bool ReadGeneratedAnimFloats( idFile *file, float *values, int count ) {
 		return false;
 	}
 	LittleRevBytes( values, sizeof( float ), count );
-	return true;
+	return GeneratedAnimFloatsAreFinite( values, count );
 }
 
 static bool WriteGeneratedAnimFloats( idFile *file, const float *values, int count ) {
@@ -114,6 +280,9 @@ static bool WriteGeneratedAnimFloats( idFile *file, const float *values, int cou
 	}
 	if ( count == 0 ) {
 		return true;
+	}
+	if ( !GeneratedAnimFloatsAreFinite( values, count ) ) {
+		return false;
 	}
 	if ( !Swap_IsBigEndian() ) {
 		return file->Write( values, (int)byteCount ) == byteCount;
@@ -270,10 +439,52 @@ idMD5Anim::LoadGeneratedAnim
 */
 bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 	idStr cachePath;
-	GetGeneratedAnimPath( filename, cachePath );
+	if ( !GetGeneratedAnimPath( filename, cachePath ) ) {
+		return false;
+	}
 
-	idFile *cache = fileSystem->OpenFileRead( cachePath, false );
-	if ( cache == NULL ) {
+	idStr cacheOSPath = fileSystem->RelativePathToOSPath( cachePath, "fs_savepath" );
+	idFile *diskCache = fileSystem->OpenExplicitFileRead( cacheOSPath );
+	if ( diskCache == NULL ) {
+		return false;
+	}
+
+	const int diskLength = diskCache->Length();
+	bool valid = diskLength > GENERATED_ANIM_CRC_TRAILER_BYTES &&
+		diskLength <= MAX_GENERATED_ANIM_RECORD_BYTES + GENERATED_ANIM_CRC_TRAILER_BYTES;
+	idList< byte > diskBytes;
+	if ( valid ) {
+		diskBytes.SetGranularity( 1 );
+		diskBytes.SetNum( diskLength );
+		valid = diskCache->Read( diskBytes.Ptr(), diskLength ) == diskLength &&
+			diskCache->Tell() == diskLength;
+	}
+	fileSystem->CloseFile( diskCache );
+
+	const int recordLength = valid ? diskLength - GENERATED_ANIM_CRC_TRAILER_BYTES : 0;
+	if ( valid ) {
+		const unsigned int storedLength = ReadGeneratedAnimLittleUnsignedInt( diskBytes.Ptr() + recordLength );
+		const unsigned int storedChecksum = ReadGeneratedAnimLittleUnsignedInt(
+			diskBytes.Ptr() + recordLength + sizeof( unsigned int ) );
+		valid = storedLength == (unsigned int)recordLength &&
+			storedChecksum == CRC32_BlockChecksum( diskBytes.Ptr(), recordLength );
+	}
+
+	idFile *cache = NULL;
+	if ( valid ) {
+		cache = fileSystem->GetNewFileMemory();
+		valid = cache != NULL &&
+			cache->Write( diskBytes.Ptr(), recordLength ) == recordLength;
+		if ( valid ) {
+			cache->MakeReadOnly();
+			valid = cache->Length() == recordLength && cache->Tell() == 0;
+		}
+	}
+	if ( !valid ) {
+		if ( cache != NULL ) {
+			fileSystem->CloseFile( cache );
+		}
+		fileSystem->RemoveFileChecked( cachePath, "fs_savepath" );
 		return false;
 	}
 
@@ -287,23 +498,25 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 	unsigned int version = 0;
 	int sourceLength = -1;
 	int sourceContainerChecksum = 0;
+	unsigned int sourceContentChecksum = 0;
 	unsigned int timestampLow = 0;
 	unsigned int timestampHigh = 0;
-	idStr sourceFullPath;
+	idStr sourcePath;
 	int cachedNumFrames = 0;
 	int cachedNumJoints = 0;
 	int cachedFrameRate = 0;
 	int cachedNumAnimatedComponents = 0;
 	idVec3 cachedTotalDelta;
 
-	bool valid =
+	valid =
 		cache->ReadUnsignedInt( magic ) == sizeof( magic ) &&
 		cache->ReadUnsignedInt( version ) == sizeof( version ) &&
 		cache->ReadInt( sourceLength ) == sizeof( sourceLength ) &&
 		cache->ReadInt( sourceContainerChecksum ) == sizeof( sourceContainerChecksum ) &&
+		cache->ReadUnsignedInt( sourceContentChecksum ) == sizeof( sourceContentChecksum ) &&
 		cache->ReadUnsignedInt( timestampLow ) == sizeof( timestampLow ) &&
 		cache->ReadUnsignedInt( timestampHigh ) == sizeof( timestampHigh ) &&
-		ReadGeneratedAnimString( cache, sourceFullPath, MAX_STRING_CHARS ) &&
+		ReadGeneratedAnimString( cache, sourcePath, MAX_STRING_CHARS ) &&
 		cache->ReadInt( cachedNumFrames ) == sizeof( cachedNumFrames ) &&
 		cache->ReadInt( cachedNumJoints ) == sizeof( cachedNumJoints ) &&
 		cache->ReadInt( cachedFrameRate ) == sizeof( cachedFrameRate ) &&
@@ -316,20 +529,29 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 		version == GENERATED_ANIM_VERSION &&
 		sourceLength == sourceInfo.length &&
 		sourceContainerChecksum == sourceInfo.containerChecksum &&
+		sourceContentChecksum == sourceInfo.contentChecksum &&
 		sourceTimestamp == sourceInfo.timestamp &&
-		sourceFullPath.Cmp( sourceInfo.fullPath ) == 0 &&
+		sourcePath.Cmp( sourceInfo.normalizedPath ) == 0 &&
 		cachedNumFrames > 0 && cachedNumFrames <= MAX_GENERATED_ANIM_FRAMES &&
 		cachedNumJoints > 0 && cachedNumJoints <= MAX_GENERATED_ANIM_JOINTS &&
-		cachedFrameRate > 0 &&
+		cachedFrameRate > 0 && cachedFrameRate <= MAX_GENERATED_ANIM_FRAME_RATE &&
 		cachedNumAnimatedComponents >= 0 &&
-		cachedNumAnimatedComponents <= cachedNumJoints * 6;
+		cachedNumAnimatedComponents <= cachedNumJoints * 6 &&
+		GeneratedAnimFloatsAreFinite( cachedTotalDelta.ToFloatPtr(), 3 );
 
-	const long long componentCount = (long long)cachedNumFrames * cachedNumAnimatedComponents;
-	const long long dataBytes =
-		(long long)cachedNumFrames * 6 * sizeof( float ) +
-		(long long)cachedNumJoints * 7 * sizeof( float ) +
-		componentCount * sizeof( float );
-	valid = valid && componentCount <= 0x7fffffff && dataBytes >= 0 && dataBytes <= MAX_GENERATED_ANIM_DATA_BYTES;
+	long long componentCount = 0;
+	if ( valid ) {
+		componentCount = (long long)cachedNumFrames * cachedNumAnimatedComponents;
+		const long long dataBytes =
+			(long long)cachedNumFrames * 6 * sizeof( float ) +
+			(long long)cachedNumJoints * 7 * sizeof( float ) +
+			componentCount * sizeof( float );
+		valid = componentCount <= 0x7fffffff &&
+			dataBytes >= 0 && dataBytes <= MAX_GENERATED_ANIM_DATA_BYTES;
+	}
+
+	int cachedAnimLength = 0;
+	valid = valid && CalculateGeneratedAnimLength( cachedNumFrames, cachedFrameRate, cachedAnimLength );
 
 	idStrList cachedJointNames;
 	idList< jointAnimInfo_t > cachedJointInfo;
@@ -343,18 +565,23 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 		cachedJointInfo.SetNum( cachedNumJoints );
 		for ( int i = 0; valid && i < cachedNumJoints; ++i ) {
 			jointAnimInfo_t &joint = cachedJointInfo[ i ];
+			joint.parentNum = -2;
+			joint.animBits = 0;
+			joint.firstComponent = -1;
 			valid =
 				ReadGeneratedAnimString( cache, cachedJointNames[ i ], MAX_STRING_CHARS ) &&
 				cache->ReadInt( joint.parentNum ) == sizeof( joint.parentNum ) &&
 				cache->ReadInt( joint.animBits ) == sizeof( joint.animBits ) &&
 				cache->ReadInt( joint.firstComponent ) == sizeof( joint.firstComponent );
 			joint.nameIndex = 0;
+			const int jointComponentCount = GeneratedAnimComponentCount( joint.animBits );
 			valid = valid &&
-				joint.parentNum < i &&
-				( i == 0 || joint.parentNum >= 0 ) &&
+				( ( i == 0 && joint.parentNum == -1 ) ||
+					( i > 0 && joint.parentNum >= 0 && joint.parentNum < i ) ) &&
 				( joint.animBits & ~63 ) == 0 &&
-				( cachedNumAnimatedComponents == 0 ||
-					( joint.firstComponent >= 0 && joint.firstComponent < cachedNumAnimatedComponents ) );
+				joint.firstComponent >= 0 &&
+				joint.firstComponent <= cachedNumAnimatedComponents &&
+				jointComponentCount <= cachedNumAnimatedComponents - joint.firstComponent;
 		}
 	}
 
@@ -362,6 +589,14 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 		cachedBounds.SetGranularity( 1 );
 		cachedBounds.SetNum( cachedNumFrames );
 		valid = ReadGeneratedAnimFloats( cache, cachedBounds[ 0 ][ 0 ].ToFloatPtr(), cachedNumFrames * 6 );
+		for ( int i = 0; valid && i < cachedNumFrames; ++i ) {
+			for ( int axis = 0; axis < 3; ++axis ) {
+				valid = cachedBounds[ i ][ 0 ][ axis ] <= cachedBounds[ i ][ 1 ][ axis ];
+				if ( !valid ) {
+					break;
+				}
+			}
+		}
 	}
 
 	idList< float > cachedBaseFrameData;
@@ -374,16 +609,22 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 	if ( valid ) {
 		cachedBaseFrame.SetGranularity( 1 );
 		cachedBaseFrame.SetNum( cachedNumJoints );
-		for ( int i = 0; i < cachedNumJoints; ++i ) {
+		for ( int i = 0; valid && i < cachedNumJoints; ++i ) {
 			const float *source = cachedBaseFrameData.Ptr() + i * 7;
 			cachedBaseFrame[ i ].q.Set( source[ 0 ], source[ 1 ], source[ 2 ], source[ 3 ] );
 			cachedBaseFrame[ i ].t.Set( source[ 4 ], source[ 5 ], source[ 6 ] );
 			cachedBaseFrame[ i ].w = 0.0f;
+			const float quaternionLengthSqr = source[ 0 ] * source[ 0 ] +
+				source[ 1 ] * source[ 1 ] + source[ 2 ] * source[ 2 ] + source[ 3 ] * source[ 3 ];
+			valid = GeneratedAnimFloatIsFinite( quaternionLengthSqr ) &&
+				idMath::Fabs( quaternionLengthSqr - 1.0f ) <= GENERATED_ANIM_QUATERNION_EPSILON;
 		}
 
-		cachedComponentFrames.SetGranularity( 1 );
-		cachedComponentFrames.SetNum( (int)componentCount );
-		valid = ReadGeneratedAnimFloats( cache, cachedComponentFrames.Ptr(), cachedComponentFrames.Num() );
+		if ( valid ) {
+			cachedComponentFrames.SetGranularity( 1 );
+			cachedComponentFrames.SetNum( (int)componentCount );
+			valid = ReadGeneratedAnimFloats( cache, cachedComponentFrames.Ptr(), cachedComponentFrames.Num() );
+		}
 	}
 
 	unsigned int endMagic = 0;
@@ -395,6 +636,7 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 	fileSystem->CloseFile( cache );
 
 	if ( !valid ) {
+		fileSystem->RemoveFileChecked( cachePath, "fs_savepath" );
 		return false;
 	}
 
@@ -409,7 +651,7 @@ bool idMD5Anim::LoadGeneratedAnim( const char *filename ) {
 	frameRate = cachedFrameRate;
 	numAnimatedComponents = cachedNumAnimatedComponents;
 	totaldelta = cachedTotalDelta;
-	animLength = ( ( numFrames - 1 ) * 1000 + frameRate - 1 ) / frameRate;
+	animLength = cachedAnimLength;
 	jointInfo.Swap( cachedJointInfo );
 	bounds.Swap( cachedBounds );
 	baseFrame.Swap( cachedBaseFrame );
@@ -429,8 +671,10 @@ void idMD5Anim::WriteGeneratedAnim( const char *filename ) const {
 	}
 
 	idStr cachePath;
-	GetGeneratedAnimPath( filename, cachePath );
-	idFile *cache = fileSystem->OpenFileWrite( cachePath );
+	if ( !GetGeneratedAnimPath( filename, cachePath ) ) {
+		return;
+	}
+	idFile *cache = fileSystem->GetNewFileMemory();
 	if ( cache == NULL ) {
 		return;
 	}
@@ -439,14 +683,44 @@ void idMD5Anim::WriteGeneratedAnim( const char *filename ) const {
 	unsigned int timestampHigh = 0;
 	SplitGeneratedAnimTimestamp( sourceInfo.timestamp, timestampLow, timestampHigh );
 
-	bool valid =
+	int calculatedAnimLength = 0;
+	bool valid = CalculateGeneratedAnimLength( numFrames, frameRate, calculatedAnimLength ) &&
+		numJoints > 0 && numJoints <= MAX_GENERATED_ANIM_JOINTS &&
+		numAnimatedComponents >= 0 && numAnimatedComponents <= numJoints * 6 &&
+		jointInfo.Num() == numJoints && bounds.Num() == numFrames &&
+		baseFrame.Num() == numJoints &&
+		GeneratedAnimFloatsAreFinite( totaldelta.ToFloatPtr(), 3 );
+	long long componentCount = 0;
+	if ( valid ) {
+		componentCount = (long long)numFrames * numAnimatedComponents;
+		const long long dataBytes =
+			(long long)numFrames * 6 * sizeof( float ) +
+			(long long)numJoints * 7 * sizeof( float ) +
+			componentCount * sizeof( float );
+		valid = componentCount <= 0x7fffffff &&
+			componentFrames.Num() == (int)componentCount &&
+			dataBytes >= 0 && dataBytes <= MAX_GENERATED_ANIM_DATA_BYTES;
+	}
+	for ( int i = 0; valid && i < numFrames; ++i ) {
+		for ( int axis = 0; axis < 3; ++axis ) {
+			valid = GeneratedAnimFloatIsFinite( bounds[ i ][ 0 ][ axis ] ) &&
+				GeneratedAnimFloatIsFinite( bounds[ i ][ 1 ][ axis ] ) &&
+				bounds[ i ][ 0 ][ axis ] <= bounds[ i ][ 1 ][ axis ];
+			if ( !valid ) {
+				break;
+			}
+		}
+	}
+
+	valid = valid &&
 		cache->WriteUnsignedInt( GENERATED_ANIM_MAGIC ) == sizeof( GENERATED_ANIM_MAGIC ) &&
 		cache->WriteUnsignedInt( GENERATED_ANIM_VERSION ) == sizeof( GENERATED_ANIM_VERSION ) &&
 		cache->WriteInt( sourceInfo.length ) == sizeof( sourceInfo.length ) &&
 		cache->WriteInt( sourceInfo.containerChecksum ) == sizeof( sourceInfo.containerChecksum ) &&
+		cache->WriteUnsignedInt( sourceInfo.contentChecksum ) == sizeof( sourceInfo.contentChecksum ) &&
 		cache->WriteUnsignedInt( timestampLow ) == sizeof( timestampLow ) &&
 		cache->WriteUnsignedInt( timestampHigh ) == sizeof( timestampHigh ) &&
-		WriteGeneratedAnimString( cache, sourceInfo.fullPath );
+		WriteGeneratedAnimString( cache, sourceInfo.normalizedPath );
 	valid = valid &&
 		cache->WriteInt( numFrames ) == sizeof( numFrames ) &&
 		cache->WriteInt( numJoints ) == sizeof( numJoints ) &&
@@ -456,7 +730,14 @@ void idMD5Anim::WriteGeneratedAnim( const char *filename ) const {
 
 	for ( int i = 0; valid && i < numJoints; ++i ) {
 		const jointAnimInfo_t &joint = jointInfo[ i ];
+		const int jointComponentCount = GeneratedAnimComponentCount( joint.animBits );
 		valid =
+			( ( i == 0 && joint.parentNum == -1 ) ||
+				( i > 0 && joint.parentNum >= 0 && joint.parentNum < i ) ) &&
+			( joint.animBits & ~63 ) == 0 &&
+			joint.firstComponent >= 0 &&
+			joint.firstComponent <= numAnimatedComponents &&
+			jointComponentCount <= numAnimatedComponents - joint.firstComponent &&
 			WriteGeneratedAnimString( cache, animationLib->JointName( joint.nameIndex ) ) &&
 			cache->WriteInt( joint.parentNum ) == sizeof( joint.parentNum ) &&
 			cache->WriteInt( joint.animBits ) == sizeof( joint.animBits ) &&
@@ -480,8 +761,19 @@ void idMD5Anim::WriteGeneratedAnim( const char *filename ) const {
 			destination[ 4 ] = baseFrame[ i ].t.x;
 			destination[ 5 ] = baseFrame[ i ].t.y;
 			destination[ 6 ] = baseFrame[ i ].t.z;
+			const float quaternionLengthSqr = destination[ 0 ] * destination[ 0 ] +
+				destination[ 1 ] * destination[ 1 ] + destination[ 2 ] * destination[ 2 ] +
+				destination[ 3 ] * destination[ 3 ];
+			valid = GeneratedAnimFloatIsFinite( quaternionLengthSqr ) &&
+				GeneratedAnimFloatsAreFinite( destination, 7 ) &&
+				idMath::Fabs( quaternionLengthSqr - 1.0f ) <= GENERATED_ANIM_QUATERNION_EPSILON;
+			if ( !valid ) {
+				break;
+			}
 		}
-		valid = WriteGeneratedAnimFloats( cache, baseFrameData.Ptr(), baseFrameData.Num() );
+		if ( valid ) {
+			valid = WriteGeneratedAnimFloats( cache, baseFrameData.Ptr(), baseFrameData.Num() );
+		}
 	}
 
 	if ( valid ) {
@@ -491,9 +783,32 @@ void idMD5Anim::WriteGeneratedAnim( const char *filename ) const {
 		valid = cache->WriteUnsignedInt( GENERATED_ANIM_END_MAGIC ) == sizeof( GENERATED_ANIM_END_MAGIC );
 	}
 
+	const int recordLength = cache->Length();
+	valid = valid && calculatedAnimLength == animLength &&
+		recordLength > 0 && recordLength <= MAX_GENERATED_ANIM_RECORD_BYTES &&
+		cache->GetDataPtr() != NULL;
+	unsigned int recordChecksum = 0;
+	if ( valid ) {
+		recordChecksum = CRC32_BlockChecksum( cache->GetDataPtr(), recordLength );
+		cache->MakeReadOnly();
+	}
+
+	idStr stagedPath = cachePath;
+	stagedPath += ".tmp";
+	idFile *stagedCache = valid ? fileSystem->OpenFileWrite( stagedPath, "fs_savepath" ) : NULL;
+	valid = valid && stagedCache != NULL;
+	if ( valid ) {
+		valid = stagedCache->Write( cache->GetDataPtr(), recordLength ) == recordLength &&
+			stagedCache->WriteUnsignedInt( (unsigned int)recordLength ) == sizeof( unsigned int ) &&
+			stagedCache->WriteUnsignedInt( recordChecksum ) == sizeof( recordChecksum ) &&
+			stagedCache->Sync();
+	}
+	if ( stagedCache != NULL ) {
+		fileSystem->CloseFile( stagedCache );
+	}
 	fileSystem->CloseFile( cache );
-	if ( !valid ) {
-		fileSystem->RemoveFile( cachePath );
+	if ( !valid || !fileSystem->PromoteFile( stagedPath, cachePath, "fs_savepath" ) ) {
+		fileSystem->RemoveFileChecked( stagedPath, "fs_savepath" );
 	}
 }
 
@@ -503,7 +818,10 @@ idMD5Anim::LoadAnim
 ====================
 */
 bool idMD5Anim::LoadAnim( const char *filename ) {
-	if ( g_useGeneratedAnimCache.GetBool() && LoadGeneratedAnim( filename ) ) {
+	fileSystem->RecordLevelLoadResource( LEVEL_LOAD_RESOURCE_ANIMATION,
+		filename, "md5anim", 0, 2 );
+	if ( cvarSystem->GetCVarBool( "com_levelLoadModernization" ) &&
+		g_useGeneratedAnimCache.GetBool() && LoadGeneratedAnim( filename ) ) {
 		return true;
 	}
 
@@ -552,7 +870,7 @@ bool idMD5Anim::LoadAnim( const char *filename ) {
 	// parse frame rate
 	parser.ExpectTokenString( "frameRate" );
 	frameRate = parser.ParseInt();
-	if ( frameRate < 0 ) {
+	if ( frameRate <= 0 || frameRate > MAX_GENERATED_ANIM_FRAME_RATE ) {
 		parser.Error( "Invalid frame rate: %d", frameRate );
 	}
 
@@ -593,7 +911,10 @@ bool idMD5Anim::LoadAnim( const char *filename ) {
 
 		// parse first component
 		jointInfo[ i ].firstComponent = parser.ParseInt();
-		if ( ( numAnimatedComponents > 0 ) && ( ( jointInfo[ i ].firstComponent < 0 ) || ( jointInfo[ i ].firstComponent >= numAnimatedComponents ) ) ) {
+		const int jointComponentCount = GeneratedAnimComponentCount( jointInfo[ i ].animBits );
+		if ( jointInfo[ i ].firstComponent < 0 ||
+				jointInfo[ i ].firstComponent > numAnimatedComponents ||
+				jointComponentCount > numAnimatedComponents - jointInfo[ i ].firstComponent ) {
 			parser.Error( "Invalid first component: %d", jointInfo[ i ].firstComponent );
 		}
 	}
@@ -679,9 +1000,12 @@ bool idMD5Anim::LoadAnim( const char *filename ) {
 	baseFrame[ 0 ].t.Zero();
 
 	// we don't count last frame because it would cause a 1 frame pause at the end
-	animLength = ( ( numFrames - 1 ) * 1000 + frameRate - 1 ) / frameRate;
+	if ( !CalculateGeneratedAnimLength( numFrames, frameRate, animLength ) ) {
+		parser.Error( "Animation duration is out of range" );
+	}
 
-	if ( g_writeGeneratedAnimCache.GetBool() ) {
+	if ( cvarSystem->GetCVarBool( "com_levelLoadModernization" ) &&
+		g_writeGeneratedAnimCache.GetBool() ) {
 		WriteGeneratedAnim( filename );
 	}
 

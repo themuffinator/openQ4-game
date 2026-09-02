@@ -1878,6 +1878,12 @@ idPlayer::idPlayer() {
 
 	centerView.Init( 0, 0, 0, 0 );
 	fxFov					= false;
+	viewSweepActive			= false;
+	viewSweepStartTime		= 0;
+	viewSweepDurationMS		= 0;
+	viewSweepDegrees		= 0.0f;
+	viewSweepStartYaw		= 0.0f;
+	viewSweepPitch			= 0.0f;
 
 	influenceFov			= 0;
 	influenceActive			= 0;
@@ -2268,6 +2274,12 @@ void idPlayer::Init( void ) {
 	zoomed					= false;
 	centerView.Init( 0, 0, 0, 0 );
 	fxFov					= false;
+	viewSweepActive			= false;
+	viewSweepStartTime		= 0;
+	viewSweepDurationMS		= 0;
+	viewSweepDegrees		= 0.0f;
+	viewSweepStartYaw		= 0.0f;
+	viewSweepPitch			= 0.0f;
 
 	influenceFov			= 0;
 	influenceActive			= 0;
@@ -3366,7 +3378,7 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( (int &)previousWaterLevel );
 	savefile->ReadInt( previousWaterType );
 	nextLiquidSurfaceSoundTime = 0;
-	if ( savefile->HasOpenQ4PlayerLiquidSaveFields() ) {
+	if ( savefile->HasOpenQ4PlayerLiquidSoundSaveField() ) {
 		savefile->ReadInt( nextLiquidSurfaceSoundTime );
 	}
 	savefile->ReadInt( nextLiquidDamageTime );
@@ -4629,6 +4641,23 @@ void idPlayer::UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt
 	Player_SetVisibilityEffects( &renderEntity, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
 	Player_SetVisibilityEffects( headRenderEnt, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
 	Player_SetVisibilityEffects( weaponRenderEnt, outlineColor, outlineWidth, outlineFlags, rimlightColor, brightSkinColor );
+}
+
+/*
+===============
+idPlayer::UpdateZoomGuiViewState
+===============
+*/
+void idPlayer::UpdateZoomGuiViewState( void ) {
+	if ( weapon == NULL || weapon->GetZoomGui() == NULL ) {
+		return;
+	}
+
+	// Scope markings are presentation state. At refresh rates above the game
+	// tick, use the interpolated camera that is actually being drawn instead of
+	// the weapon's last authoritative simulation axis.
+	const idMat3 &presentedViewAxis = renderView != NULL ? renderView->viewaxis : firstPersonViewAxis;
+	weapon->GetZoomGui()->SetStateFloat( "playerYaw", presentedViewAxis.ToAngles().yaw );
 }
 
 /*
@@ -8925,6 +8954,77 @@ void idPlayer::SetViewAngles( const idAngles &angles ) {
 idPlayer::UpdateViewAngles
 ================
 */
+/*
+==============
+idPlayer::StartBenchmarkViewSweep
+
+Begins a deterministic, game-time driven yaw pan from the current view.
+Automated performance captures use this instead of synthesized mouse input,
+so the same sweep is reproduced regardless of host frame rate.
+==============
+*/
+void idPlayer::StartBenchmarkViewSweep( float degrees, int durationMS ) {
+	if ( durationMS <= 0 ) {
+		StopBenchmarkViewSweep();
+		return;
+	}
+
+	viewSweepActive			= true;
+	viewSweepStartTime		= gameLocal.time;
+	viewSweepDurationMS		= durationMS;
+	viewSweepDegrees		= degrees;
+	viewSweepStartYaw		= viewAngles.yaw;
+	viewSweepPitch			= viewAngles.pitch;
+}
+
+/*
+==============
+idPlayer::StopBenchmarkViewSweep
+==============
+*/
+void idPlayer::StopBenchmarkViewSweep( void ) {
+	viewSweepActive			= false;
+	viewSweepDurationMS		= 0;
+}
+
+/*
+==============
+idPlayer::UpdateBenchmarkViewSweep
+
+Drives the sweep from game time so the pan covers the requested arc at a
+constant angular rate.  Returns true while the sweep owns the view angles.
+==============
+*/
+bool idPlayer::UpdateBenchmarkViewSweep( void ) {
+	if ( !viewSweepActive ) {
+		return false;
+	}
+
+	if ( viewSweepDurationMS <= 0 ) {
+		StopBenchmarkViewSweep();
+		return false;
+	}
+
+	const int elapsed = gameLocal.time - viewSweepStartTime;
+	float fraction = (float)elapsed / (float)viewSweepDurationMS;
+	if ( fraction <= 0.0f ) {
+		fraction = 0.0f;
+	} else if ( fraction >= 1.0f ) {
+		fraction = 1.0f;
+		viewSweepActive = false;
+		// Report the arc that was actually walked so an automated capture can
+		// prove the camera really panned instead of trusting the request.
+		gameLocal.Printf( "benchmarkViewSweep: complete, %.1f degrees over %d ms, yaw %.1f -> %.1f\n", 
+			viewSweepDegrees, viewSweepDurationMS, idMath::AngleNormalize180( viewSweepStartYaw ),
+			idMath::AngleNormalize180( viewSweepStartYaw + viewSweepDegrees ) );
+	}
+
+	viewAngles.yaw = idMath::AngleNormalize180( viewSweepStartYaw + ( viewSweepDegrees * fraction ) );
+	viewAngles.pitch = viewSweepPitch;
+	viewAngles.roll = 0.0f;
+	return true;
+}
+
 void idPlayer::UpdateViewAngles( void ) {
 	int i;
 	idAngles delta;
@@ -8992,6 +9092,8 @@ void idPlayer::UpdateViewAngles( void ) {
 			viewAngles.pitch = pm_minviewpitch.GetFloat();
 		}
 	}
+
+	UpdateBenchmarkViewSweep();
 
 	UpdateDeltaViewAngles( viewAngles );
 
@@ -13235,6 +13337,18 @@ bool idPlayer::CanInterpolatePresentationView( void ) const {
 		return false;
 	}
 
+	// g_presentationInterpolation 0 takes every entity off the presentation clock
+	// (idGameLocal::SamplePresentationEntityPoses clears the whole list), and the
+	// eye has to go with them.  Leaving the camera interpolated while the world
+	// and the player's own body step at 60 Hz produces exactly the beat this
+	// system exists to remove: with the body suppressed in first person the only
+	// witness is the player's own shadow, which slides smoothly under a stepping
+	// silhouette.  The cvar's contract is "back on the 60 Hz simulation clock",
+	// so honour it here too.
+	if ( !g_presentationInterpolation.GetBool() ) {
+		return false;
+	}
+
 	// The eye must never be drawn on a different presentation time than what is
 	// carrying it.  A moving lift drawn on the authoritative pose while the eye
 	// is drawn interpolated drifts by one tic of the lift's own travel and snaps
@@ -14743,36 +14857,93 @@ idPlayer::ReadFromSnapshot
 ================
 */
 void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
- 	int		i, oldHealth, newIdealWeapon, weaponSpawnId, weaponWorldSpawnId;
- 	bool	newHitToggle, stateHitch, newHitArmor;
+	int		i, oldHealth, newIdealWeapon, newWeaponSpawnId, newWeaponWorldSpawnId;
+	bool	newHitToggle, stateHitch, newHitArmor;
 	int		lastKillerEntity;
 	bool	proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+	playerPState_t decodedPhysics;
+	idAngles decodedDeltaViewAngles;
+	int decodedHealth;
+	int decodedArmor;
+	int decodedLastDamageDef;
+	idVec3 decodedLastDamageDir;
+	int decodedLastDamageLocation;
+	int decodedWeapons;
+	int decodedSpectator;
+	bool decodedWeaponGone;
+	bool decodedIsLagged;
+	bool decodedIsChatting;
+	int decodedConnectTime;
+	bool hasWeaponState;
+	int decodedWeaponAmmo = 0;
+	bool decodedInBuyZone = false;
+	int decodedCash = 0;
 
- 	if ( snapshotSequence - lastSnapshotSequence > 1 ) {
+	if ( static_cast<unsigned int>( snapshotSequence ) - static_cast<unsigned int>( lastSnapshotSequence ) > 1u ) {
  		stateHitch = true;
  	} else {
  		stateHitch = false;
  	}
- 	lastSnapshotSequence = snapshotSequence;
-
 	oldHealth = health;
 
-	physicsObj.ReadFromSnapshot( msg );
-	ReadBindFromSnapshot( msg );
-	deltaViewAngles[0] = msg.ReadDeltaFloat( 0.0f );
-	deltaViewAngles[1] = msg.ReadDeltaFloat( 0.0f );
-	deltaViewAngles[2] = msg.ReadDeltaFloat( 0.0f );
-	health = msg.ReadShort();
-	inventory.armor = msg.ReadByte();
- 	lastDamageDef = msg.ReadBits( gameLocal.entityDefBits );
-	lastDamageDir = msg.ReadDir( 9 );
-	lastDamageLocation = msg.ReadShort();
-	newIdealWeapon = msg.ReadBits( idMath::BitsForInteger( MAX_WEAPONS ) );
-	inventory.weapons = msg.ReadBits( MAX_WEAPONS );
- 	weaponSpawnId = msg.ReadBits( 32 );
- 	weaponWorldSpawnId = msg.ReadBits( 32 );
-	int latchedSpectator = spectator;
-	spectator = msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
+	if ( !physicsObj.DecodeSnapshotState( msg, decodedPhysics ) ) {
+		return;
+	}
+	const int decodedBindInfo = DecodeBindSnapshotInfo( msg );
+	decodedDeltaViewAngles[0] = msg.ReadDeltaFloat( 0.0f );
+	decodedDeltaViewAngles[1] = msg.ReadDeltaFloat( 0.0f );
+	decodedDeltaViewAngles[2] = msg.ReadDeltaFloat( 0.0f );
+	decodedHealth = msg.ReadShort();
+	decodedArmor = msg.ReadByte();
+	decodedLastDamageDef = msg.ReadBits( gameLocal.entityDefBits );
+	decodedLastDamageDir = msg.ReadDir( 9 );
+	decodedLastDamageLocation = msg.ReadShort();
+	newIdealWeapon = msg.ReadBits( -idMath::BitsForInteger( MAX_WEAPONS ) );
+	if ( msg.IsReadOverflowed() || newIdealWeapon < -1 || newIdealWeapon >= MAX_WEAPONS ) {
+		gameLocal.Warning( "ReadFromSnapshot: invalid ideal weapon %d", newIdealWeapon );
+		msg.MarkReadOverflowed();
+		return;
+	}
+	decodedWeapons = msg.ReadBits( MAX_WEAPONS );
+	newWeaponSpawnId = msg.ReadBits( 32 );
+	newWeaponWorldSpawnId = msg.ReadBits( 32 );
+	decodedSpectator = msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
+	if ( msg.IsReadOverflowed() || decodedSpectator < 0 || decodedSpectator >= MAX_CLIENTS ) {
+		gameLocal.Warning( "ReadFromSnapshot: invalid spectator %d", decodedSpectator );
+		msg.MarkReadOverflowed();
+		return;
+	}
+	newHitToggle = msg.ReadBits( 1 ) != 0;
+	newHitArmor = msg.ReadBits( 1 ) != 0;
+	decodedWeaponGone = msg.ReadBits( 1 ) != 0;
+	decodedIsLagged = msg.ReadBits( 1 ) != 0;
+	decodedIsChatting = msg.ReadBits( 1 ) != 0;
+	decodedConnectTime = msg.ReadLong();
+	lastKillerEntity = msg.ReadByte();
+	hasWeaponState = msg.ReadBits( 1 ) != 0;
+	if ( hasWeaponState ) {
+		decodedWeaponAmmo = rvWeapon::DecodeSnapshotAmmo( msg );
+	}
+	if ( !proto69 ) {
+		decodedInBuyZone = msg.ReadBits( 1 ) != 0;
+		decodedCash = msg.ReadLong();
+	}
+	if ( msg.IsReadOverflowed() ) {
+		return;
+	}
+
+	lastSnapshotSequence = snapshotSequence;
+	physicsObj.ApplySnapshotState( decodedPhysics );
+	ApplyBindSnapshotInfo( decodedBindInfo );
+	deltaViewAngles = decodedDeltaViewAngles;
+	health = decodedHealth;
+	inventory.armor = decodedArmor;
+	lastDamageDef = decodedLastDamageDef;
+	lastDamageDir = decodedLastDamageDir;
+	lastDamageLocation = decodedLastDamageLocation;
+	inventory.weapons = decodedWeapons;
+	const int latchedSpectator = spectator;
+	spectator = decodedSpectator;
 	if ( spectating && latchedSpectator != spectator && this == gameLocal.GetLocalPlayer() ) {
 		// don't do any smoothing with this snapshot
 		predictedFrame = gameLocal.framenum;
@@ -14791,7 +14962,7 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			gameLocal.mpGame.tourneyGUI.UpdateScores();
 		}
 
-		if ( gameLocal.entities[ spectator ] ) {
+		if ( gameLocal.entities[ spectator ] && gameLocal.entities[ spectator ]->IsType( idPlayer::GetClassType() ) ) {
 			idPlayer *p = static_cast< idPlayer * >( gameLocal.entities[ spectator ] );
 			p->UpdateHudWeapon( p->currentWeapon );
 			if ( p->weapon ) {
@@ -14799,14 +14970,13 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			}
 		}
 	}
- 	newHitToggle = msg.ReadBits( 1 ) != 0;
-	newHitArmor = msg.ReadBits( 1 ) != 0;
- 	weaponGone = msg.ReadBits( 1 ) != 0;
- 	isLagged = msg.ReadBits( 1 ) != 0;
- 	isChatting = msg.ReadBits( 1 ) != 0;
-	connectTime = msg.ReadLong();
-	lastKillerEntity = msg.ReadByte();
-	if( lastKillerEntity >= 0 && lastKillerEntity < MAX_CLIENTS)	{
+	weaponGone = decodedWeaponGone;
+	isLagged = decodedIsLagged;
+	isChatting = decodedIsChatting;
+	connectTime = decodedConnectTime;
+	if( lastKillerEntity >= 0 && lastKillerEntity < MAX_CLIENTS &&
+		gameLocal.entities[ lastKillerEntity ] != NULL &&
+		gameLocal.entities[ lastKillerEntity ]->IsType( idPlayer::GetClassType() ) )	{
 		lastKiller = static_cast<idPlayer *>(gameLocal.entities[ lastKillerEntity ]);
 	} else {
 		lastKiller = NULL;
@@ -14823,8 +14993,8 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	}
 
 	// Attach the world and view entities  
-	weaponWorldModel.SetSpawnId( weaponWorldSpawnId );
-	if ( weaponWorldModel.IsValid() && weaponViewModel.SetSpawnId( weaponSpawnId ) ) {
+	weaponWorldModel.SetSpawnId( newWeaponWorldSpawnId );
+	if ( weaponWorldModel.IsValid() && weaponViewModel.SetSpawnId( newWeaponSpawnId ) ) {
 		currentWeapon = -1;
 		SetWeapon( idealWeapon );
 	}
@@ -14841,11 +15011,9 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 
 	// If we have a weapon then update it from the snapshot, otherwise
 	// we just skip whatever it would have read if it were there
-	if ( msg.ReadBits( 1 ) ) {
+	if ( hasWeaponState ) {
 		if ( weapon ) {
-			weapon->ReadFromSnapshot( msg );
-		} else {
-			rvWeapon::SkipFromSnapshot( msg );
+			weapon->ApplySnapshotAmmo( decodedWeaponAmmo );
 		}
 	}
 	if ( proto69 ) {
@@ -14853,10 +15021,9 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		buyMenuCash = 0.0f;
 	} else {
 //RITUAL BEGIN
-		inBuyZone = msg.ReadBits( 1 ) != 0;
-		int cash = msg.ReadLong();
-		if ( cash != (int)buyMenuCash ) {
-			buyMenuCash = (float)cash;
+		inBuyZone = decodedInBuyZone;
+		if ( decodedCash != (int)buyMenuCash ) {
+			buyMenuCash = (float)decodedCash;
 			gameLocal.mpGame.RedrawLocalBuyMenu();
 		}
 //RITUAL END
@@ -15432,6 +15599,9 @@ idPlayer::GetWeaponDef
 ==============
 */
 const idDeclEntityDef* idPlayer::GetWeaponDef ( int weaponIndex ) {
+	if ( weaponIndex < 0 || weaponIndex >= MAX_WEAPONS ) {
+		return NULL;
+	}
 	if ( cachedWeaponDefs[weaponIndex] ) {
 		return cachedWeaponDefs[weaponIndex];
 	}

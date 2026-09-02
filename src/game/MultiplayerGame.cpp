@@ -2367,13 +2367,16 @@ bool idMultiplayerGame::AllPlayersReady( idStr* reason ) {
 				if( gameLocal.gameType == GAME_TOURNEY ) {
 					*reason = va( common->GetLocalizedString( "#str_110018" ), common->KeysFromBindingForPrompt( "_impulse17" ) );
 				} else {
-					*reason = va( common->GetLocalizedString( "#str_107711" ), common->KeysFromBindingForPrompt( "_impulse17" ) );
+					// The stock non-tourney HUD fits two normal-height lines in a
+					// 40-pixel window.  A large prompt keycap raises both line skips
+					// and clips the second line completely.
+					*reason = va( common->GetLocalizedString( "#str_107711" ), common->KeysFromBinding( "_impulse17" ) );
 				}
 			} else if( gameLocal.GetLocalPlayer() ) {
 				if( gameLocal.gameType == GAME_TOURNEY ) {
 					*reason = va( common->GetLocalizedString( "#str_110017" ), common->KeysFromBindingForPrompt( "_impulse17" ) );
 				} else {
-					*reason = va( common->GetLocalizedString( "#str_107710" ), common->KeysFromBindingForPrompt( "_impulse17" ) );
+					*reason = va( common->GetLocalizedString( "#str_107710" ), common->KeysFromBinding( "_impulse17" ) );
 				}
 			}
 		}
@@ -5488,6 +5491,7 @@ bool idMultiplayerGame::Draw( int clientNum ) {
 
 	gameLocal.PreparePlayerSceneForRender( viewPlayer );
 	if ( !viewPlayer->GetRenderView() ) {
+		gameLocal.EndPresentationSceneForRender();
 		return false;
 	}
 
@@ -5498,6 +5502,7 @@ bool idMultiplayerGame::Draw( int clientNum ) {
 		hud = player->hud;
 	}
 	viewPlayer->playerView.RenderPlayerView( hud );
+	gameLocal.EndPresentationSceneForRender();
 
 	// allow force scoreboard to overwrite a fullscreen menu
 	if ( currentMenu ) { 
@@ -6052,77 +6057,129 @@ idMultiplayerGame::ReadFromSnapshot
 */
 void idMultiplayerGame::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	int 		i, newInstance;
-	byte		ingame[ MAX_CLIENTS / 8 ];
+	byte		ingame[ MAX_CLIENTS / 8 ] = { 0 };
 	idEntity*	ent;
 	bool		proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+	bool		decodedBuyingAllowed = false;
+	int			decodedPowerupCount = 0;
+	float		decodedMarinePulse = 0.0f;
+	float		decodedStroggPulse = 0.0f;
+	int			decodedTeamScore[ TEAM_MAX ];
+	int			decodedTeamDeadZoneScore[ TEAM_MAX ];
+	mpPlayerState_t decodedPlayerState[ MAX_CLIENTS ];
+	bool		hasTourneyState[ MAX_CLIENTS ] = { false };
+	int			decodedInstance[ MAX_CLIENTS ];
+	playerTourneyStatus_t decodedTourneyStatus[ MAX_CLIENTS ];
+	memcpy( decodedPlayerState, playerState, sizeof( decodedPlayerState ) );
 
-	if ( proto69 ) {
-		isBuyingAllowedRightNow = false;
-		powerupCount = 0;
-		marineScoreBarPulseAmount = 0;
-		stroggScoreBarPulseAmount = 0;
-	} else {
+	if ( !proto69 ) {
 // RITUAL BEGIN - DeadZone & buying Messages
-		isBuyingAllowedRightNow = msg.ReadBits(1);
-		powerupCount = msg.ReadShort();
+		decodedBuyingAllowed = msg.ReadBits(1);
+		decodedPowerupCount = msg.ReadShort();
 		// TTimo: NOTE: sounds excessive to be transmitting floats for that
-		marineScoreBarPulseAmount = msg.ReadFloat();
-		stroggScoreBarPulseAmount = msg.ReadFloat();
+		decodedMarinePulse = msg.ReadFloat();
+		decodedStroggPulse = msg.ReadFloat();
 // RITUAL END
 	}
 
 	// CTF/TDM scoring
 	for( i = 0; i < TEAM_MAX; i++ ) {
-		teamScore[ i ] = msg.ReadShort( );
+		decodedTeamScore[ i ] = msg.ReadShort( );
 		if ( proto69 ) {
-			teamDeadZoneScore[ i ] = 0;
+			decodedTeamDeadZoneScore[ i ] = 0;
 		} else {
-			teamDeadZoneScore[ i ] = msg.ReadLong( );
+			decodedTeamDeadZoneScore[ i ] = msg.ReadLong( );
 		}
 	}
 
 	msg.ReadData( ingame, MAX_CLIENTS / 8 );
+	if ( msg.IsReadOverflowed() ) {
+		gameLocal.Warning( "ReadFromSnapshot: truncated in-game player bitmap" );
+		return;
+	}
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
 		if ( ingame[ i / 8 ] & ( 1 << ( i % 8 ) ) ) {
-			playerState[i].ingame = true;
+			decodedPlayerState[i].ingame = true;
 		} else {
-			playerState[i].ingame = false;
+			decodedPlayerState[i].ingame = false;
 		}
 	}
 
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
-		if ( playerState[i].ingame ) {
+		if ( decodedPlayerState[i].ingame ) {
 			ent = gameLocal.entities[ i ];
-			playerState[ i ].fragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
-			playerState[ i ].teamFragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
-			if ( proto69 ) {
-				playerState[ i ].deadZoneScore = 0;				
-			} else {
-				playerState[ i ].deadZoneScore = msg.ReadLong();
+			if ( ent == NULL || !ent->IsType( idPlayer::GetClassType() ) ) {
+				gameLocal.Warning( "ReadFromSnapshot: in-game slot %d is not a player", i );
+				msg.MarkReadOverflowed();
+				return;
 			}
-			playerState[ i ].wins = msg.ReadBits( ASYNC_PLAYER_WINS_BITS );
+			decodedPlayerState[ i ].fragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
+			decodedPlayerState[ i ].teamFragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
+			if ( proto69 ) {
+				decodedPlayerState[ i ].deadZoneScore = 0;
+			} else {
+				decodedPlayerState[ i ].deadZoneScore = msg.ReadLong();
+			}
+			decodedPlayerState[ i ].wins = msg.ReadBits( ASYNC_PLAYER_WINS_BITS );
 			if( gameLocal.gameType == GAME_TOURNEY ) {
 				if( msg.ReadBits( 1 ) ) {
 					newInstance = msg.ReadBits( ASYNC_PLAYER_INSTANCE_BITS );
-					if( newInstance != ent->GetInstance() ) {
-						ent->SetInstance( newInstance );
-						if( gameLocal.GetLocalPlayer() && i != gameLocal.localClientNum ) {
-							if( ent->GetInstance() == gameLocal.GetLocalPlayer()->GetInstance() ) {
-								((idPlayer*)ent)->ClientInstanceJoin();
-							} else {
-								((idPlayer*)ent)->ClientInstanceLeave();
-							}
-						}
+					if ( newInstance < 0 || newInstance >= MAX_INSTANCES ) {
+						gameLocal.Warning( "ReadFromSnapshot: invalid tourney instance %d", newInstance );
+						msg.MarkReadOverflowed();
+						return;
 					}
-					((idPlayer*)ent)->SetTourneyStatus( (playerTourneyStatus_t)msg.ReadBits( ASYNC_PLAYER_TOURNEY_STATUS_BITS ) );
+					hasTourneyState[ i ] = true;
+					decodedInstance[ i ] = newInstance;
+					decodedTourneyStatus[ i ] = (playerTourneyStatus_t)msg.ReadBits( ASYNC_PLAYER_TOURNEY_STATUS_BITS );
 				}
 			}
 		}
 	}
 
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
-		if ( playerState[i].ingame ) {
-			playerState[ i ].ping = msg.ReadBits( ASYNC_PLAYER_PING_BITS );
+		if ( decodedPlayerState[i].ingame ) {
+			decodedPlayerState[ i ].ping = msg.ReadBits( ASYNC_PLAYER_PING_BITS );
+		}
+	}
+	if ( msg.IsReadOverflowed() ) {
+		return;
+	}
+
+	isBuyingAllowedRightNow = decodedBuyingAllowed;
+	powerupCount = decodedPowerupCount;
+	marineScoreBarPulseAmount = decodedMarinePulse;
+	stroggScoreBarPulseAmount = decodedStroggPulse;
+	memcpy( teamScore, decodedTeamScore, sizeof( teamScore ) );
+	memcpy( teamDeadZoneScore, decodedTeamDeadZoneScore, sizeof( teamDeadZoneScore ) );
+	for ( i = 0; i < MAX_CLIENTS; i++ ) {
+		playerState[ i ].ingame = decodedPlayerState[ i ].ingame;
+	}
+	for ( i = 0; i < MAX_CLIENTS; i++ ) {
+		if ( decodedPlayerState[ i ].ingame ) {
+			playerState[ i ].fragCount = decodedPlayerState[ i ].fragCount;
+			playerState[ i ].teamFragCount = decodedPlayerState[ i ].teamFragCount;
+			playerState[ i ].deadZoneScore = decodedPlayerState[ i ].deadZoneScore;
+			playerState[ i ].wins = decodedPlayerState[ i ].wins;
+		}
+		if ( hasTourneyState[ i ] ) {
+			ent = gameLocal.entities[ i ];
+			if ( decodedInstance[ i ] != ent->GetInstance() ) {
+				ent->SetInstance( decodedInstance[ i ] );
+				if ( gameLocal.GetLocalPlayer() && i != gameLocal.localClientNum ) {
+					if ( ent->GetInstance() == gameLocal.GetLocalPlayer()->GetInstance() ) {
+						((idPlayer*)ent)->ClientInstanceJoin();
+					} else {
+						((idPlayer*)ent)->ClientInstanceLeave();
+					}
+				}
+			}
+			((idPlayer*)ent)->SetTourneyStatus( decodedTourneyStatus[ i ] );
+		}
+	}
+	for ( i = 0; i < MAX_CLIENTS; i++ ) {
+		if ( decodedPlayerState[ i ].ingame ) {
+			playerState[ i ].ping = decodedPlayerState[ i ].ping;
 		}
 	}
 }

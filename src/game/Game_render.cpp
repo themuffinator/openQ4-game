@@ -757,6 +757,8 @@ static void openQ4_LabelGameRenderTargets( rvmGameRender_t& gameRender ) {
 	renderSystem->SetRenderTextureDebugName( gameRender.postProcessRT[2], "openQ4 PostAA SMAA scene source" );
 	renderSystem->SetRenderTextureDebugName( gameRender.postProcessRT[1], "openQ4 PostAA SMAA edge/blend" );
 	renderSystem->SetRenderTextureDebugName( gameRender.postProcessRT[0], "openQ4 PostAA SMAA weights/final" );
+	renderSystem->SetRenderTextureDebugName( gameRender.temporalHistoryRT[0], "openQ4 temporal history 0 (native)" );
+	renderSystem->SetRenderTextureDebugName( gameRender.temporalHistoryRT[1], "openQ4 temporal history 1 (native)" );
 }
 
 static bool openQ4_ExecuteSMAAPass( const openq4SMAAPass_t& pass ) {
@@ -877,6 +879,12 @@ void idGameLocal::ShutdownGameRenderSystem( void ) {
 			gameRender.postProcessRT[i] = NULL;
 		}
 	}
+	for ( int i = 0; i < 2; ++i ) {
+		if ( gameRender.temporalHistoryRT[i] != NULL ) {
+			renderSystem->DestroyRenderTexture( gameRender.temporalHistoryRT[i] );
+			gameRender.temporalHistoryRT[i] = NULL;
+		}
+	}
 
 	if ( gameRender.forwardRenderPassRT != NULL ) {
 		renderSystem->DestroyRenderTexture( gameRender.forwardRenderPassRT );
@@ -901,6 +909,11 @@ void idGameLocal::ShutdownGameRenderSystem( void ) {
 	gameRender.forwardRenderSamples = 0;
 	gameRender.renderTargetWidth = 0;
 	gameRender.renderTargetHeight = 0;
+	gameRender.temporalHistoryWidth = 0;
+	gameRender.temporalHistoryHeight = 0;
+	gameRender.temporalHistoryReadIndex = 0;
+	gameRender.temporalHistoryGeneration = 0;
+	gameRender.temporalHistoryValid = false;
 	gameRender.videoRestartCount = ( renderSystem != NULL ) ? renderSystem->GetVideoRestartCount() : 0;
 	gameRender.postAAWarningState = OPENQ4_POST_AA_WARNING_NONE;
 }
@@ -930,7 +943,181 @@ static int openQ4_NextLowerMSAASampleCount( int samples ) {
 	return 0;
 }
 
-static idRenderTexture* openQ4_CreateForwardRenderTarget( int requestedSamples, int& effectiveSamples ) {
+static renderPresentationState_t openQ4_GetPresentationState( void ) {
+	renderPresentationState_t state;
+	renderSystem->GetPresentationState( state );
+
+	// Keep game-module startup robust when it precedes the first BeginFrame.
+	// The engine normally supplies this fallback itself, but older call order
+	// during a video restart can transiently expose an unlatched frame.
+	if ( state.outputWidth <= 0 ) {
+		state.outputWidth = Max( 1, renderSystem->GetScreenWidth() );
+	}
+	if ( state.outputHeight <= 0 ) {
+		state.outputHeight = Max( 1, renderSystem->GetScreenHeight() );
+	}
+	if ( state.sceneWidth <= 0 ) {
+		state.sceneWidth = state.outputWidth;
+	}
+	if ( state.sceneHeight <= 0 ) {
+		state.sceneHeight = state.outputHeight;
+	}
+
+	return state;
+}
+
+static bool openQ4_AdvancedScreenSpaceRequested( void ) {
+	return cvarSystem->GetCVarBool( "r_rendererModernQuality" )
+		&& ( cvarSystem->GetCVarBool( "r_rendererFroxelVolumetrics" )
+			|| cvarSystem->GetCVarBool( "r_rendererSSR" )
+			|| cvarSystem->GetCVarBool( "r_rendererSSGI" ) );
+}
+
+static idRenderTexture* openQ4_CreateTemporalHistoryRenderTarget(
+		int historyIndex, int targetWidth, int targetHeight ) {
+	if ( targetWidth <= 0 || targetHeight <= 0 ) {
+		return NULL;
+	}
+
+	idImageOpts opts;
+	opts.format = FMT_RGBA8;
+	opts.colorFormat = CFM_DEFAULT;
+	opts.numLevels = 1;
+	opts.textureType = TT_2D;
+	opts.isPersistant = true;
+	opts.width = targetWidth;
+	opts.height = targetHeight;
+	opts.numMSAASamples = 0;
+
+	idImage *historyImage = renderSystem->CreateImage(
+		va( "_temporalHistoryAlbedo%d", historyIndex ), &opts, TF_LINEAR );
+	if ( historyImage == NULL ) {
+		return NULL;
+	}
+	idRenderTexture *historyTarget =
+		renderSystem->CreateRenderTexture( historyImage, NULL, NULL );
+	if ( historyTarget != NULL ) {
+		renderSystem->SetRenderTextureDebugName(
+			historyTarget,
+			va( "openQ4 temporal history %d (native)", historyIndex ) );
+	}
+	return historyTarget;
+}
+
+static void openQ4_ResetTemporalHistoryOwnership(
+		rvmGameRender_t& gameRender, unsigned int historyGeneration ) {
+	gameRender.temporalHistoryReadIndex = 0;
+	gameRender.temporalHistoryGeneration = historyGeneration;
+	gameRender.temporalHistoryValid = false;
+}
+
+static bool openQ4_SynchronizeTemporalHistory(
+		rvmGameRender_t& gameRender,
+		const renderPresentationState_t& presentation ) {
+	if ( gameRender.temporalHistoryGeneration != presentation.historyGeneration ) {
+		openQ4_ResetTemporalHistoryOwnership(
+			gameRender, presentation.historyGeneration );
+	}
+
+	if ( presentation.outputWidth <= 0 || presentation.outputHeight <= 0 ) {
+		return false;
+	}
+
+	bool resourcesChanged =
+		gameRender.temporalHistoryWidth != presentation.outputWidth
+		|| gameRender.temporalHistoryHeight != presentation.outputHeight;
+	bool resourcesReady = true;
+	for ( int i = 0; i < 2; ++i ) {
+		idRenderTexture *&history = gameRender.temporalHistoryRT[i];
+		int historyWidth = 0;
+		int historyHeight = 0;
+		QueryRenderTextureSize( history, historyWidth, historyHeight );
+		if ( history != NULL
+				&& ( historyWidth != presentation.outputWidth
+					|| historyHeight != presentation.outputHeight ) ) {
+			resourcesChanged = true;
+			resourcesReady = renderSystem->ResizeRenderTexture(
+				history,
+				presentation.outputWidth,
+				presentation.outputHeight ) && resourcesReady;
+		}
+		if ( history == NULL ) {
+			resourcesChanged = true;
+			history = openQ4_CreateTemporalHistoryRenderTarget(
+				i,
+				presentation.outputWidth,
+				presentation.outputHeight );
+		}
+		QueryRenderTextureSize( history, historyWidth, historyHeight );
+		resourcesReady = history != NULL
+			&& historyWidth == presentation.outputWidth
+			&& historyHeight == presentation.outputHeight
+			&& resourcesReady;
+	}
+
+	if ( resourcesChanged ) {
+		gameRender.temporalHistoryWidth = presentation.outputWidth;
+		gameRender.temporalHistoryHeight = presentation.outputHeight;
+		openQ4_ResetTemporalHistoryOwnership(
+			gameRender, presentation.historyGeneration );
+	}
+	if ( !resourcesReady ) {
+		common->Warning(
+			"Temporal presentation history is unavailable at %d x %d; using spatial presentation.",
+			presentation.outputWidth,
+			presentation.outputHeight );
+	}
+
+	return resourcesReady;
+}
+
+static bool openQ4_ResolveTemporalPresentation(
+		rvmGameRender_t& gameRender,
+		idRenderTexture *sceneColorTarget,
+		idRenderTexture *sceneDepthTarget ) {
+	// The primary view can invalidate history after the frame state was first
+	// queried (for example, on a camera cut), so consume a fresh generation.
+	const renderPresentationState_t presentation = openQ4_GetPresentationState();
+	const bool screenSpaceRequested = openQ4_AdvancedScreenSpaceRequested();
+	const bool temporalHistoryEligible = presentation.temporalAARequested
+		&& !presentation.captureFrozen && !presentation.captureForcedNative;
+	if ( ( !temporalHistoryEligible && !screenSpaceRequested )
+			|| sceneColorTarget == NULL || sceneDepthTarget == NULL ) {
+		return false;
+	}
+
+	const bool historyResourcesReady = temporalHistoryEligible
+		&& openQ4_SynchronizeTemporalHistory( gameRender, presentation );
+	const int historyWriteIndex = gameRender.temporalHistoryReadIndex ^ 1;
+	idRenderTexture *historyReadTarget = historyResourcesReady
+		&& gameRender.temporalHistoryValid
+		? gameRender.temporalHistoryRT[gameRender.temporalHistoryReadIndex]
+		: NULL;
+	idRenderTexture *historyWriteTarget = historyResourcesReady
+		? gameRender.temporalHistoryRT[historyWriteIndex]
+		: NULL;
+	if ( !renderSystem->ResolveTemporalPresentation(
+			sceneColorTarget,
+			sceneDepthTarget,
+			historyReadTarget,
+			historyWriteTarget ) ) {
+		return false;
+	}
+
+	if ( temporalHistoryEligible ) {
+		gameRender.temporalHistoryGeneration = presentation.historyGeneration;
+	}
+	if ( temporalHistoryEligible && historyResourcesReady ) {
+		gameRender.temporalHistoryReadIndex = historyWriteIndex;
+		gameRender.temporalHistoryValid = true;
+	} else {
+		gameRender.temporalHistoryValid = false;
+	}
+	return true;
+}
+
+static idRenderTexture* openQ4_CreateForwardRenderTarget( int requestedSamples,
+		int targetWidth, int targetHeight, int& effectiveSamples ) {
 	effectiveSamples = 0;
 	int attemptSamples = Max( 0, requestedSamples );
 
@@ -944,8 +1131,8 @@ static idRenderTexture* openQ4_CreateForwardRenderTarget( int requestedSamples, 
 		albedoOpts.numLevels = 1;
 		albedoOpts.textureType = TT_2D;
 		albedoOpts.isPersistant = true;
-		albedoOpts.width = renderSystem->GetScreenWidth();
-		albedoOpts.height = renderSystem->GetScreenHeight();
+		albedoOpts.width = targetWidth;
+		albedoOpts.height = targetHeight;
 		albedoOpts.numMSAASamples = attemptSamples;
 
 		idImage* albedoImage = renderSystem->CreateImage( "_forwardRenderAlbedo", &albedoOpts, TF_LINEAR );
@@ -1015,10 +1202,15 @@ void idGameLocal::InitGameRenderSystem(void) {
 
 	renderSystem->SetPortalSkyCaptureViewCallback( openQ4_BuildPortalSkyCaptureView );
 
+	const renderPresentationState_t presentation = openQ4_GetPresentationState();
+	const int targetWidth = presentation.sceneWidth;
+	const int targetHeight = presentation.sceneHeight;
 	const int requestedMsaaSamples = Max( 0, cvarSystem->GetCVarInteger( "r_multiSamples" ) );
 
 	gameRender.forwardRenderPassRT = openQ4_CreateForwardRenderTarget(
 		requestedMsaaSamples,
+		targetWidth,
+		targetHeight,
 		gameRender.forwardRenderSamples );
 
 	for(int i = 0; i < 3; i++)
@@ -1029,8 +1221,8 @@ void idGameLocal::InitGameRenderSystem(void) {
 		opts.numLevels = 1;
 		opts.textureType = TT_2D;
 		opts.isPersistant = true;
-		opts.width = renderSystem->GetScreenWidth();
-		opts.height = renderSystem->GetScreenHeight();
+		opts.width = targetWidth;
+		opts.height = targetHeight;
 		opts.numMSAASamples = 0;
 
 		idImage* albedoImage = renderSystem->CreateImage(va("_postProcessAlbedo%d", i), &opts, TF_LINEAR);
@@ -1047,8 +1239,8 @@ void idGameLocal::InitGameRenderSystem(void) {
 		opts.numLevels = 1;
 		opts.textureType = TT_2D;
 		opts.isPersistant = true;
-		opts.width = renderSystem->GetScreenWidth();
-		opts.height = renderSystem->GetScreenHeight();
+		opts.width = targetWidth;
+		opts.height = targetHeight;
 		opts.numMSAASamples = 0;
 
 		idImage *albedoImage = renderSystem->CreateImage("_forwardRenderResolvedAlbedo", &opts, TF_LINEAR);
@@ -1058,6 +1250,16 @@ void idGameLocal::InitGameRenderSystem(void) {
 		idImage *depthImage = renderSystem->CreateImage("_forwardRenderResolvedDepth", &opts, TF_LINEAR);
 
 		gameRender.forwardRenderPassResolvedRT = renderSystem->CreateRenderTexture(albedoImage, depthImage);
+	}
+
+	// Histories are intentionally lazy: the default-off feature carries no
+	// native-resolution ping-pong allocation cost on a clean configuration.
+	gameRender.temporalHistoryWidth = 0;
+	gameRender.temporalHistoryHeight = 0;
+	openQ4_ResetTemporalHistoryOwnership(
+		gameRender, presentation.historyGeneration );
+	if ( presentation.temporalAARequested ) {
+		(void)openQ4_SynchronizeTemporalHistory( gameRender, presentation );
 	}
 
 	openQ4_LabelGameRenderTargets( gameRender );
@@ -1088,8 +1290,8 @@ void idGameLocal::InitGameRenderSystem(void) {
 		requestedMsaaSamples,
 		gameRender.forwardRenderSamples );
 
-	gameRender.renderTargetWidth = renderSystem->GetScreenWidth();
-	gameRender.renderTargetHeight = renderSystem->GetScreenHeight();
+	gameRender.renderTargetWidth = targetWidth;
+	gameRender.renderTargetHeight = targetHeight;
 }
 
 /*
@@ -1141,30 +1343,42 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		InitGameRenderSystem();
 	}
 
-	const int screenWidth = renderSystem->GetScreenWidth();
-	const int screenHeight = renderSystem->GetScreenHeight();
-	const bool haveScreenDimensions = ( screenWidth > 0 ) && ( screenHeight > 0 );
+	const renderPresentationState_t presentation = openQ4_GetPresentationState();
+	const int screenWidth = presentation.outputWidth;
+	const int screenHeight = presentation.outputHeight;
+	const int sceneWidth = presentation.sceneWidth;
+	const int sceneHeight = presentation.sceneHeight;
+	const bool havePresentationDimensions =
+		( screenWidth > 0 ) && ( screenHeight > 0 ) &&
+		( sceneWidth > 0 ) && ( sceneHeight > 0 );
 
-	bool needsTargetReinit = false;
-	if ( haveScreenDimensions &&
+	bool needsTargetResize = false;
+	if ( havePresentationDimensions &&
 		gameRender.forwardRenderPassRT != NULL &&
 		gameRender.forwardRenderPassResolvedRT != NULL &&
 		gameRender.postProcessRT[0] != NULL ) {
-		if ( gameRender.renderTargetWidth != screenWidth ||
-			gameRender.renderTargetHeight != screenHeight ) {
-			needsTargetReinit = true;
+		if ( gameRender.renderTargetWidth != sceneWidth ||
+			gameRender.renderTargetHeight != sceneHeight ) {
+			needsTargetResize = true;
 		}
 	}
 
-	if ( needsTargetReinit ) {
+	if ( needsTargetResize ) {
 		common->Printf(
-			"Reinitializing game render targets after dimension/state change (%d x %d)\n",
+			"Resizing game scene targets to %d x %d for %d x %d output (%d%%)\n",
+			sceneWidth,
+			sceneHeight,
 			screenWidth,
-			screenHeight );
-		InitGameRenderSystem();
+			screenHeight,
+			presentation.effectiveScalePercent );
+		ResizeRenderTextures( sceneWidth, sceneHeight );
 	}
+	// History remains native-resolution while dynamic resolution only resizes
+	// the scene/post chain. Keep it entirely lazy while temporal AA is off.
+	const bool temporalHistoryReady = presentation.temporalAARequested
+		&& openQ4_SynchronizeTemporalHistory( gameRender, presentation );
 
-	const bool canUsePostProcess = haveScreenDimensions &&
+	const bool canUsePostProcess = havePresentationDimensions &&
 		gameRender.postProcessAvailable &&
 		gameRender.forwardRenderPassRT != NULL &&
 		gameRender.forwardRenderPassResolvedRT != NULL &&
@@ -1177,6 +1391,13 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
 		return;
 	}
+
+	// All game-owned 3D and post-process resources share the latched scene
+	// extent. The final pass binds the native backbuffer, so it upscales while
+	// HUD/menu submissions that follow continue at the output extent.
+	renderSystem->SetPostProcessSourceSize(
+		gameRender.renderTargetWidth,
+		gameRender.renderTargetHeight );
 	// Minimum render is used for screen captures(such as envcapture) calls, caller is responsible for all rendertarget setup.
 	//if (view->minimumRender)
 	//{
@@ -1211,16 +1432,26 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	LogPostAASchedule( postAASchedule, gameRender.smaaAvailable );
 
 	const bool useSMAA = PostAAModeUsesSMAA( postAASchedule.effectiveMode );
+	const bool screenSpaceRequested = openQ4_AdvancedScreenSpaceRequested();
+	const bool temporalResolveCandidate =
+		( ( presentation.temporalAARequested
+			&& !presentation.captureFrozen
+			&& !presentation.captureForcedNative )
+			|| screenSpaceRequested )
+		&& gameRender.postProcessRT[1] != NULL;
 
 	const bool canUseFastNoPost =
 		g_renderFastNoPost.GetBool() &&
 		gameRender.forwardRenderSamples <= 0 &&
 		!blurEnabled &&
 		!wantsSMAA &&
-		!wantsCAS;
+		!wantsCAS &&
+		!presentation.temporalAARequested &&
+		!screenSpaceRequested;
 
 	if ( canUseFastNoPost ) {
-		if ( g_renderFastNoPostDirect.GetBool() ) {
+		if ( g_renderFastNoPostDirect.GetBool() &&
+			sceneWidth == screenWidth && sceneHeight == screenHeight ) {
 			openQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 			if ( g_renderCaptureCurrentRender.GetBool() ) {
 				renderSystem->CaptureRenderToImage( "_currentRender" );
@@ -1261,14 +1492,20 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 	renderSystem->ResolveMSAA(
 		gameRender.forwardRenderPassRT,
 		gameRender.forwardRenderPassResolvedRT,
-		blurEnabled || cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
+		blurEnabled || presentation.temporalAARequested || screenSpaceRequested
+			|| cvarSystem->GetCVarBool( "r_msaaResolveDepth" ) );
 
-	// Resolve pass writes scene color to the post-process source buffer.
-	renderSystem->BindRenderTexture(postAASchedule.resolveTarget, nullptr);
+	// Temporal AA consumes the pre-SMAA scene. Keep the mature SMAA schedule
+	// intact so it can run immediately if temporal enqueue rejects.
+	idRenderTexture *initialResolveTarget = temporalResolveCandidate
+		&& temporalHistoryReady
+		? gameRender.postProcessRT[0]
+		: postAASchedule.resolveTarget;
+	renderSystem->BindRenderTexture(initialResolveTarget, nullptr);
 		renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
 		openQ4_DrawFullScreenMaterial( gameRender.resolvePostProcessMaterial );
 	renderSystem->BindRenderTexture( nullptr, nullptr );
-	if ( useSMAA ) {
+	if ( useSMAA && ( !temporalResolveCandidate || !temporalHistoryReady ) ) {
 		if ( !openQ4_ApplySMAA( gameRender, postAASchedule.sourceColorSpace, postAASchedule.effectiveMode ) ) {
 			renderSystem->BindRenderTexture( gameRender.postProcessRT[0], nullptr );
 			renderSystem->ClearRenderTarget( true, true, 1.0f, 0.0f, 0.0f, 0.0f );
@@ -1282,6 +1519,48 @@ void idGameLocal::RenderScene(const renderView_t *view, idRenderWorld *renderWor
 		openQ4_RenderSceneDirect( view, renderWorld, portalSky, renderFlags );
 		renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
 		return;
+	}
+
+	if ( temporalResolveCandidate ) {
+		// Keep all game post effects at the scene extent. The renderer temporal
+		// resolve is then the sole native-output scene operation before UI.
+		renderSystem->BindRenderTexture( gameRender.postProcessRT[1], NULL );
+		renderSystem->ClearRenderTarget(
+			true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+		openQ4_DrawFullScreenMaterial( finalMaterial );
+		renderSystem->BindRenderTexture( NULL, NULL );
+
+		if ( openQ4_ResolveTemporalPresentation(
+				gameRender,
+				gameRender.postProcessRT[1],
+				gameRender.forwardRenderPassResolvedRT ) ) {
+			if ( g_renderCaptureCurrentRender.GetBool() ) {
+				renderSystem->CaptureRenderToImage( "_currentRender" );
+			}
+			renderSystem->SetUseUIViewportFor2D( previousUIViewportMode );
+			return;
+		}
+
+		// The renderer rejected the temporal command before enqueue. Rebuild the
+		// ordinary SMAA input and run its compatibility schedule now; accepted
+		// temporal frames never stack both AA filters.
+		if ( useSMAA && temporalHistoryReady ) {
+			renderSystem->BindRenderTexture( postAASchedule.resolveTarget, NULL );
+			renderSystem->ClearRenderTarget(
+				true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+			openQ4_DrawFullScreenMaterial( gameRender.resolvePostProcessMaterial );
+			renderSystem->BindRenderTexture( NULL, NULL );
+			if ( !openQ4_ApplySMAA( gameRender,
+					postAASchedule.sourceColorSpace,
+					postAASchedule.effectiveMode ) ) {
+				renderSystem->BindRenderTexture( gameRender.postProcessRT[0], NULL );
+				renderSystem->ClearRenderTarget(
+					true, true, 1.0f, 0.0f, 0.0f, 0.0f );
+				openQ4_DrawFullScreenMaterial(
+					gameRender.resolvePostProcessMaterial );
+				renderSystem->BindRenderTexture( NULL, NULL );
+			}
+		}
 	}
 
 	// SS_POST_PROCESS stages use depth testing; reset backbuffer depth each frame

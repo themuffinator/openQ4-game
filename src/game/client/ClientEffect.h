@@ -17,10 +17,10 @@ public:
 	virtual ~rvClientEffect( void );
 
 	virtual void		Think			( void );
-	virtual void		UpdatePresentationTransform	( void );
+	virtual void		UpdatePresentationTransform	( int presentationTime );
 	virtual void		DrawDebugInfo	( void ) const;
 	virtual void		FreeEntityDef	( void );
-	virtual void		UpdateBind		( void );
+	virtual void		UpdateBind		( int presentationTime = -1 );
 
 	bool				Play			( int startTime, bool loop = false, const idVec3& origin = vec3_origin );
 	void				Stop			( bool destroyParticles = false );

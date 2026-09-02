@@ -1808,7 +1808,7 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat( frametime );
 	savefile->ReadFloat( playerSpeed );
 	swimSpeed = 0.0f;
-	if ( savefile->HasOpenQ4PlayerLiquidSaveFields() ) {
+	if ( savefile->HasOpenQ4PlayerSwimSpeedSaveField() ) {
 		savefile->ReadFloat( swimSpeed );
 	}
 	savefile->ReadVec3( viewForward );
@@ -2261,41 +2261,46 @@ idPhysics_Player::ReadFromSnapshot
 ================
 */
 void idPhysics_Player::ReadFromSnapshot( const idBitMsgDelta &msg ) {
-	
-	idVec3 oldOrigin = current.origin;
+	playerPState_t decoded;
+	if ( !DecodeSnapshotState( msg, decoded ) ) {
+		return;
+	}
+	ApplySnapshotState( decoded );
+}
 
-	current.origin[0] = msg.ReadFloat();
-	current.origin[1] = msg.ReadFloat();
-	current.origin[2] = msg.ReadFloat();
+bool idPhysics_Player::DecodeSnapshotState( const idBitMsgDelta &msg, playerPState_t &decoded ) const {
+	decoded = current;
+	decoded.origin[0] = msg.ReadFloat();
+	decoded.origin[1] = msg.ReadFloat();
+	decoded.origin[2] = msg.ReadFloat();
+	decoded.velocity[0] = msg.ReadDeltaFloat( 0.0f );
+	decoded.velocity[1] = msg.ReadDeltaFloat( 0.0f );
+	decoded.velocity[2] = msg.ReadDeltaFloat( 0.0f );
+	decoded.localOrigin[0] = msg.ReadDeltaFloat( decoded.origin[0] );
+	decoded.localOrigin[1] = msg.ReadDeltaFloat( decoded.origin[1] );
+	decoded.localOrigin[2] = msg.ReadDeltaFloat( decoded.origin[2] );
+	decoded.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f );
+	decoded.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f );
+	decoded.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f );
+	decoded.stepUp = msg.ReadDeltaFloat( 0.0f );
+	decoded.movementType = msg.ReadBits( PLAYER_MOVEMENT_TYPE_BITS );
+	decoded.movementFlags = msg.ReadBits( PLAYER_MOVEMENT_FLAGS_BITS );
+	decoded.movementTime = msg.ReadDeltaLong( 0 );
+	decoded.crouchSlideTime = msg.ReadDeltaLong( 0 );
+	return !msg.IsReadOverflowed();
+}
+
+void idPhysics_Player::ApplySnapshotState( const playerPState_t &decoded ) {
+	const idVec3 oldOrigin = current.origin;
+	const idVec3 oldVelocity = current.velocity;
+	current = decoded;
 
 	GAMELOG_SET( "origin_delta_x", (current.origin - oldOrigin).x );
 	GAMELOG_SET( "origin_delta_y", (current.origin - oldOrigin).y );
 	GAMELOG_SET( "origin_delta_z", (current.origin - oldOrigin).z );
-
-	idVec3 oldVelocity = current.velocity;
-
-	current.velocity[0] = msg.ReadDeltaFloat( 0.0f );
-	current.velocity[1] = msg.ReadDeltaFloat( 0.0f );
-	current.velocity[2] = msg.ReadDeltaFloat( 0.0f );
-
 	GAMELOG_SET( "velocity_delta_x", (current.velocity - oldVelocity).x );
 	GAMELOG_SET( "velocity_delta_y", (current.velocity - oldVelocity).y );
 	GAMELOG_SET( "velocity_delta_z", (current.velocity - oldVelocity).z );
-
-	current.localOrigin[0] = msg.ReadDeltaFloat( current.origin[0] );
-	current.localOrigin[1] = msg.ReadDeltaFloat( current.origin[1] );
-	current.localOrigin[2] = msg.ReadDeltaFloat( current.origin[2] );
-	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f );
-	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f );
-	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f );
-
-	current.stepUp = msg.ReadDeltaFloat( 0.0f );
-	current.movementType = msg.ReadBits( PLAYER_MOVEMENT_TYPE_BITS );
-	
-	current.movementFlags = msg.ReadBits( PLAYER_MOVEMENT_FLAGS_BITS );
-
-	current.movementTime = msg.ReadDeltaLong( 0 );
-	current.crouchSlideTime = msg.ReadDeltaLong( 0 );
 
 	if ( clipModel ) {
 		clipModel->Link( self, 0, current.origin, clipModel->GetAxis() );

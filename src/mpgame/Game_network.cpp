@@ -1856,6 +1856,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 	const idDeclEntityDef	*decl;
 
+	if ( clientNum < 0 || clientNum > MAX_CLIENTS ) {
+		common->Warning( "ClientReadSnapshot: invalid client number %d", clientNum );
+		return false;
+	}
+
 	if ( net_clientLagOMeter.GetBool() && renderSystem && !(GetDemoState() == DEMO_PLAYING && ( IsServerDemoPlaying() || IsTimeDemo() )) ) {
 		lagometer.Update( aheadOfServer, dupeUsercmds );
 	}
@@ -1887,6 +1892,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 #endif
 
 	ClientReadUnreliableMessages( msg );
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated unreliable-message queue" );
+		return false;
+	}
 
 #if ASYNC_WRITE_TAGS
 	if ( msg.ReadLong() != tagRandom.RandomInt() ) {
@@ -1985,6 +1994,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 		// read the class specific data from the snapshot
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadSnapshot: truncated entity state for %d", i );
+			return false;
+		}
 
 		// read the player state from player entities
 		if ( ent->entityNumber < MAX_CLIENTS ) {
@@ -1994,6 +2007,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 					return false;
 				}
 				static_cast< idPlayer * >( ent )->ReadPlayerStateFromSnapshot( deltaMsg );
+				if ( deltaMsg.IsReadOverflowed() ) {
+					common->Warning( "ClientReadSnapshot: truncated player state for %d", ent->entityNumber );
+					return false;
+				}
 			}
 		}
 
@@ -2017,7 +2034,9 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 	}
 
 	if ( clientNum < MAX_CLIENTS ) {
-		player = static_cast<idPlayer *>( entities[ clientNum ] );
+		idEntity *clientEntity = entities[ clientNum ];
+		player = clientEntity != NULL && clientEntity->IsType( idPlayer::GetClassType() ) ?
+			static_cast<idPlayer *>( clientEntity ) : NULL;
 	} else {
 		player = gameLocal.GetLocalPlayer();
 	}
@@ -2074,6 +2093,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 #endif
 	for ( i = 0; i < ENTITY_PVS_SIZE; i++ ) {
 		snapshot->pvs[i] = msg.ReadDeltaLong( clientPVS[clientNum][i] );
+	}
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated PVS state" );
+		pvs.FreeCurrentPVS( pvsHandle );
+		return false;
 	}
 // RAVEN BEGIN
 // ddynerman: performance profiling
@@ -2196,6 +2220,11 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 
 		// read the class specific data from the base state
 		ent->ReadFromSnapshot( deltaMsg );
+		if ( deltaMsg.IsReadOverflowed() ) {
+			common->Warning( "ClientReadSnapshot: truncated baseline state for %d", ent->entityNumber );
+			pvs.FreeCurrentPVS( pvsHandle );
+			return false;
+		}
 
 		// after snapshot read, notify client of unstale
 		if ( ent->fl.networkStale ) {
@@ -2229,6 +2258,10 @@ bool idGameLocal::ClientReadSnapshot( int clientNum, int snapshotSequence, const
 	deltaMsg.InitReading( base ? &base->state : NULL, &newBase->state, &msg );
 
 	ReadGameStateFromSnapshot( deltaMsg );
+	if ( deltaMsg.IsReadOverflowed() ) {
+		common->Warning( "ClientReadSnapshot: truncated game state" );
+		return false;
+	}
 
 	// visualize the snapshot
 	if ( clientNum < MAX_CLIENTS ) {
@@ -2264,7 +2297,10 @@ idGameLocal::ClientReadRepeaterSnapshot
 ===============
 */
 void idGameLocal::ClientReadRepeaterSnapshot( int sequence, const int gameFrame, const int gameTime, const int aheadOfServer, const idBitMsg &msg ) {
-	(void)ClientReadSnapshot( MAX_CLIENTS, sequence, gameFrame, gameTime, 0, aheadOfServer, msg );
+	if ( !ClientReadSnapshot( MAX_CLIENTS, sequence, gameFrame, gameTime, 0, aheadOfServer, msg ) ) {
+		common->Error( "ClientReadRepeaterSnapshot: malformed snapshot %d", sequence );
+		return;
+	}
 }
 
 /*
@@ -2379,6 +2415,10 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	assert( isClient );
 
 	hitscanDefIndex = msg.ReadLong();
+	if ( msg.IsReadOverflowed() || hitscanDefIndex < 0 || hitscanDefIndex >= declManager->GetNumDecls( DECL_ENTITYDEF ) ) {
+		common->Warning( "idGameLocal::ClientHitScan: invalid or truncated entity def index %d\n", hitscanDefIndex );
+		return;
+	}
 	decl = static_cast< const idDeclEntityDef *>( declManager->DeclByIndex( DECL_ENTITYDEF, hitscanDefIndex ) );
 	if ( !decl ) {
 		common->Warning( "idGameLocal::ClientHitScan: entity def index %d not found\n", hitscanDefIndex );
@@ -2386,7 +2426,12 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	}
 	num_hitscans = decl->dict.GetInt( "hitscans", "1" );
 
-	owner = entities[ msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) ) ];	
+	const int ownerNumber = msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
+	if ( msg.IsReadOverflowed() || ownerNumber < 0 || ownerNumber >= MAX_CLIENTS ) {
+		common->Warning( "idGameLocal::ClientHitScan: invalid or truncated owner %d\n", ownerNumber );
+		return;
+	}
+	owner = entities[ ownerNumber ];
 
 	muzzleOrigin[0] = msg.ReadFloat();
 	muzzleOrigin[1] = msg.ReadFloat();
@@ -2394,10 +2439,18 @@ void idGameLocal::ClientHitScan( const idBitMsg &msg ) {
 	fxOrigin[0] = msg.ReadFloat();
 	fxOrigin[1] = msg.ReadFloat();
 	fxOrigin[2] = msg.ReadFloat();
+	if ( msg.IsReadOverflowed() ) {
+		common->Warning( "idGameLocal::ClientHitScan: truncated hit-scan origin" );
+		return;
+	}
 
 	// one direction sent per hitscan
 	for( i = 0; i < num_hitscans; i++ ) {
 		dir = msg.ReadDir( 24 );
+		if ( msg.IsReadOverflowed() ) {
+			common->Warning( "idGameLocal::ClientHitScan: truncated hit-scan direction" );
+			return;
+		}
 		gameLocal.HitScan( decl->dict, muzzleOrigin, dir, fxOrigin, owner );
 	}
 }
@@ -2673,6 +2726,10 @@ void idGameLocal::ClientProcessReliableMessage( int clientNum, const idBitMsg &m
 		case GAME_RELIABLE_MESSAGE_SERVERINFO: {
 			idDict info;
 			msg.ReadDeltaDict( info, NULL );
+			if ( msg.IsReadOverflowed() ) {
+				Warning( "Ignoring malformed reliable server-info dictionary" );
+				break;
+			}
 			SetServerInfo( info );
 			break;
 		}

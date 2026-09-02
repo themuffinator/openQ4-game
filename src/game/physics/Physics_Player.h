@@ -116,6 +116,8 @@ public:	// common physics interface
 
 	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
 	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	bool					DecodeSnapshotState( const idBitMsgDelta &msg, playerPState_t &decoded ) const;
+	void					ApplySnapshotState( const playerPState_t &decoded );
 
 // RAVEN BEGIN
 // kfuller: Added

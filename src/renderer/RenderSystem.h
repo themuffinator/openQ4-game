@@ -341,6 +341,50 @@ typedef enum
 } ESpecialEffectType;
 // RAVEN END
 
+// Backend-neutral, delayed GPU duration for one complete submitted renderer
+// frame. The sample is intentionally POD because idRenderSystem may cross the
+// renderer-module boundary. A valid result always belongs to the reported
+// timing generation; resets invalidate the previous generation immediately.
+typedef enum {
+	RENDER_GPU_TIMING_BACKEND_NONE = 0,
+	RENDER_GPU_TIMING_BACKEND_OPENGL,
+	RENDER_GPU_TIMING_BACKEND_VULKAN
+} renderGpuTimingBackend_t;
+
+typedef struct renderGpuFrameTiming_s {
+	bool				supported;
+	bool				valid;
+	renderGpuTimingBackend_t backend;
+	int				frameNumber;
+	unsigned int		generation;
+	unsigned int		latencyFrames;
+	unsigned long long	elapsedMicroseconds;
+	unsigned long long	resolvedSamples;
+	unsigned long long	unavailableSamples;
+	unsigned long long	droppedSamples;
+	unsigned long long	resetCount;
+} renderGpuFrameTiming_t;
+
+// Frame-latched presentation dimensions shared with the game modules. The
+// 3D scene and its post-process chain render at sceneWidth/sceneHeight; final
+// composition and all game/UI drawing remain at outputWidth/outputHeight.
+// Keep this structure POD because idRenderSystem crosses both renderer- and
+// game-module boundaries.
+typedef struct renderPresentationState_s {
+	int				frameNumber;
+	int				outputWidth;
+	int				outputHeight;
+	int				sceneWidth;
+	int				sceneHeight;
+	int				effectiveScalePercent;
+	unsigned int		historyGeneration;
+	bool				dynamicResolutionRequested;
+	bool				dynamicResolutionActive;
+	bool				temporalAARequested;
+	bool				captureFrozen;
+	bool				captureForcedNative;
+} renderPresentationState_t;
+
 class idRenderWorld;
 
 
@@ -636,6 +680,35 @@ public:
 	// fogDistance is how far light travels through this liquid before it is fully absorbed, in
 	// world units - the knob that separates clear water from lava you cannot see a foot into.
 	virtual bool			SetUnderwaterView( float amount, const idVec3 &tint, float fogDistance ) = 0;
+
+	// Capture the coherent current crop, then center-crop and resample it on the CPU.
+	// Kept at the end of the interface so existing render-system vtable slots remain stable.
+	virtual void			CaptureRenderToFile( const char *fileName, bool fixAlpha, int outputWidth, int outputHeight ) = 0;
+
+	// Returns the newest resolved whole-frame GPU duration. Resolution is
+	// delayed and never waits for the current frame; valid=false is an expected
+	// warm-up, reset, disabled, or query-not-ready state.
+	virtual void			GetGpuFrameTiming( renderGpuFrameTiming_t &timing ) const = 0;
+
+	// Invalidates delayed samples at a non-renderer session discontinuity. The
+	// renderer owns the generation change and backend query retirement.
+	virtual void			ResetGpuFrameTiming( const char *reason ) = 0;
+
+	// Returns the immutable scene/output extent selected at BeginFrame. Before
+	// the first frame, output dimensions fall back to the active video mode.
+	virtual void			GetPresentationState( renderPresentationState_t &state ) const = 0;
+
+	// Queues the backend-neutral temporal presentation resolve. Scene colour
+	// and depth remain scene-sized; history targets are native output-sized.
+	// historyReadTarget may be NULL when seeding or invalidating history, and
+	// both history targets may be NULL to request a jitter-recentered spatial
+	// present. Returns false without queuing only when neither safe route can be
+	// represented, so the game can retain its existing SMAA/spatial path.
+	virtual bool			ResolveTemporalPresentation(
+		idRenderTexture *sceneColorTarget,
+		idRenderTexture *sceneDepthTarget,
+		idRenderTexture *historyReadTarget,
+		idRenderTexture *historyWriteTarget ) = 0;
 };
 
 extern idRenderSystem *		renderSystem;

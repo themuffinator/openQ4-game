@@ -206,6 +206,15 @@ idCVar ui_joined(					"ui_joined",				"0",			CVAR_GAME | CVAR_USERINFO | CVAR_BO
 idCVar ui_chat(						"ui_chat",					"0",			CVAR_GAME | CVAR_USERINFO | CVAR_BOOL | CVAR_ROM | CVAR_CHEAT, "player is chatting" );
 idCVar ui_handicap(					"ui_handicap",				"100",			CVAR_GAME | CVAR_USERINFO | CVAR_INTEGER | CVAR_ARCHIVE, "player damage output handicap" );
 
+// Voice-chat user settings are bound directly by the stock multiplayer GUI.
+// Keep these declarations identical to game-sp so game-mp also owns them when
+// it is the first (or only) module loaded by the unified client.
+idCVar s_voiceChatSend(				"s_voiceChatSend",			"1",			CVAR_GAME | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "allow sending voice chat" );
+idCVar s_voiceChatReceive(			"s_voiceChatReceive",		"1",			CVAR_GAME | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "allow receiving voice chat" );
+idCVar s_voiceChatEcho(				"s_voiceChatEcho",			"0",			CVAR_GAME | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "echo microphone back to speakers" );
+idCVar s_voiceVolume(				"s_voiceVolume",			"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "voice chat receive volume", 0.0f, 1.0f );
+idCVar s_micInputLevel(				"s_micInputLevel",			"5",			CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "microphone input level", 0.0f, 10.0f );
+
 idCVar hud_showSpeed(				"hud_showSpeed",			"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "Show player's movement speed, measured in Units Per Second." );
 idCVar hud_showInput(				"hud_showInput",			"0",			CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE, "When set to 1, shows the players movement controls on the HUD");
 idCVar hud_inputPosition(			"hud_inputPosition",		"580 90",		CVAR_GAME | CVAR_ARCHIVE, "Input display position (x y)");
@@ -588,7 +597,8 @@ idCVar pm_vehicleCameraScaleMax(	"pm_vehicleCameraScaleMax",		"300",		CVAR_GAME 
 idCVar pm_vehicleSoundLerpScale(	"pm_vehicleSoundLerpScale",		"10",		CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_FLOAT, "" );
 // RAVEN END
 
-idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
+idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"1",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
+idCVar g_showPresentationPose(		"g_showPresentationPose",	"0",			CVAR_GAME | CVAR_BOOL, "report whether the local player's body reaches the presentation clock" );
 
 idCVar g_skipPlayerShadowsMP(		"g_skipPlayerShadowsMP",	"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "disables all player shadows in multiplayer" );
 idCVar g_skipItemShadowsMP(			"g_skipItemShadowsMP",		"0",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "disables all item shadows in multiplayer" );
@@ -747,6 +757,12 @@ idCVar g_perfTest_noProjectiles(			"g_perfTest_noProjectiles",			"0",			CVAR_GAM
 idCVar net_serverDownload(					"net_serverDownload",				"0",			CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE, "enable server download redirects. 0: off 1: client exits and opens si_serverURL in web browser 2: client downloads pak files from an URL and connects again 3: client downloads pak files from built-in http server and connects again. See net_serverDl* cvars for configuration" );
 idCVar net_serverDlBaseURL(					"net_serverDlBaseURL",				"",				CVAR_GAME | CVAR_ARCHIVE, "base URL for the download redirection.  also overrides the URL when net_serverDownload is set to 3 (built-in HTTP server)." );
 idCVar net_serverDlTable(					"net_serverDlTable",				"",				CVAR_GAME | CVAR_ARCHIVE, "pak names for which download is provided, seperated by ; - use a * to mark all paks" );
+
+// Stock mainmenu.gui binds these directly while configuring a server. Mirror
+// the game-sp declarations so a direct game-mp launch never creates typeless
+// placeholder CVars from GUI state.
+idCVar net_menulanserver(					"net_menulanserver",				"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "treat menu server list as LAN only" );
+idCVar net_serverMenuDedicated(				"net_serverMenuDedicated",			"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "menu dedicated server toggle" );
 
 idCVar si_serverURL(						"si_serverURL",						"",				CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE, "server information page" );
 

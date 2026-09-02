@@ -19,6 +19,8 @@ public:
 	
 	void						Spawn			( void );
 	virtual void				Think			( void );
+	virtual void				UpdatePresentationTransform( int presentationTime );
+	virtual bool				HasPresentationAnimation( int fromTime, int toTime ) const;
 	
 	virtual renderEntity_t*		GetRenderEntity	( void );
 	const char*					GetClassname	( void ) const;
@@ -50,6 +52,7 @@ public:
 	int							GetModelDefHandle( void );
 protected:
 	void						Present( void );
+	void						PresentPresentation( int presentationTime );
 
 	renderEntity_t				renderEntity;
 	int							entityDefHandle;

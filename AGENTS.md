@@ -35,6 +35,9 @@ This file describes project goals, rules, and upstream credits for anyone workin
 3. Review runtime logs in the active Quake 4 install.
 4. Iterate until compatibility and stability targets are met.
 
+**Multiplayer Testing (Agent-Only)**
+- Keep `ui_autoJoin 1` enabled for multiplayer testing so clients enter gameplay automatically. Use an explicit `+set ui_autoJoin 0` only when the test specifically targets the join menu or initial spectator/join flow; do not rely on omission because the setting is archived.
+
 **Cross-Repo Workflow (Agent-Only)**
 - openQ4 (`tools/build/meson_setup.ps1`) can trigger this repo's standalone build during openQ4 compile runs when `OPENQ4_BUILD_GAMELIBS=1`.
 - openQ4 consumes this repository as the canonical source-input repository for SDK/game-library code and stages the files it needs during the engine build.

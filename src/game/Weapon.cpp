@@ -428,6 +428,20 @@ void rvViewWeapon::UpdatePresentationModel( void ) {
 	}
 
 	renderEntity_t presentationRenderEntity = renderEntity;
+	const int presentationTime = gameLocal.GetPresentationAnimationTimeMsec();
+	idAnimator *presentationAnimator = GetAnimator();
+	bool hasPresentationJoints = false;
+	if ( presentationAnimator != NULL && presentationTime >= 0 && presentationTime != gameLocal.time ) {
+		presentationAnimator->CreateFrame( gameLocal.time, false );
+		idJointMat *presentationJoints = NULL;
+		hasPresentationJoints = presentationAnimator->CreatePresentationFrame( presentationTime, &presentationJoints );
+		if ( hasPresentationJoints ) {
+			presentationRenderEntity.callback = NULL;
+			presentationRenderEntity.numJoints = presentationAnimator->NumJoints();
+			presentationRenderEntity.joints = presentationJoints;
+			presentationRenderEntity.hModel->BoundsFromJoints( presentationJoints, presentationRenderEntity.bounds );
+		}
+	}
 	idVec3 origin;
 	idMat3 axis;
 	if ( GetPhysicsToVisualTransform( origin, axis ) ) {
@@ -438,14 +452,19 @@ void rvViewWeapon::UpdatePresentationModel( void ) {
 		presentationRenderEntity.origin = GetPhysics()->GetOrigin();
 	}
 
+	presentationPoseHeld = true;
 	if ( modelDefHandle == -1 ) {
 		modelDefHandle = gameRenderWorld->AddEntityDef( &presentationRenderEntity );
 	} else {
 		gameRenderWorld->UpdateEntityDef( modelDefHandle, &presentationRenderEntity );
 	}
 
-	UpdatePresentationClientEntities();
+	UpdatePresentationClientEntities( presentationTime );
 	weapon->UpdatePresentationEffects();
+	presentationPoseHeld = false;
+	if ( hasPresentationJoints ) {
+		presentationAnimator->ClearPresentationFrame();
+	}
 }
 
 /*
@@ -460,13 +479,13 @@ muzzle; without it they sit on the last 60 Hz pose while the view model is
 drawn interpolated, and visibly unstick whenever the view is turning.
 ================
 */
-void rvViewWeapon::UpdatePresentationClientEntities( void ) {
+void rvViewWeapon::UpdatePresentationClientEntities( int presentationTime ) {
 	rvClientEntity *cent;
 	rvClientEntity *next;
 
 	for ( cent = clientEntities.Next(); cent != NULL; cent = next ) {
 		next = cent->bindNode.Next();
-		cent->UpdatePresentationTransform();
+		cent->UpdatePresentationTransform( presentationTime );
 	}
 }
 
@@ -1329,6 +1348,36 @@ creating an effect, because this runs several times per authoritative tic.
 ================
 */
 void rvWeapon::UpdatePresentationEffects( void ) {
+	// Think() places the weapon's lights from the authoritative view model pose,
+	// but the view model is drawn from the interpolated presentation pose, so at
+	// refresh rates above the game tick the two are up to a whole tic apart.  The
+	// GUI light is bound to a joint on the gun and is only a few units across
+	// (glightRadius defaults to 3), so that drift slides the lit spot across the
+	// ammo display: it shimmers while the view moves, and whatever leaves the
+	// radius goes dark.  Only weapons that declare mtr_guiLightShader have this
+	// light, which is why it shows on the machinegun, shotgun, hyperblaster and
+	// nailgun and nowhere else.  The caller is holding the interpolated pose, so
+	// re-resolving the joint here puts the light back on the gun being drawn.
+	if ( viewModel == NULL || owner == NULL ) {
+		return;
+	}
+
+	renderLight_t &guiLight = lights[ WPLIGHT_GUI ];
+	if ( guiLight.lightRadius[0] == 0.0f || guiLightJointView == INVALID_JOINT ) {
+		return;
+	}
+
+	// The colour is an evaluated GUI expression driven by GUI time, so sample it
+	// on the same frame the light is placed rather than reusing the tic's value.
+	if ( viewModel->GetRenderEntity()->gui[0] != NULL ) {
+		const idVec4 color = viewModel->GetRenderEntity()->gui[0]->GetLightColor();
+		guiLight.shaderParms[ SHADERPARM_RED ]   = color[0] * color[3];
+		guiLight.shaderParms[ SHADERPARM_GREEN ] = color[1] * color[3];
+		guiLight.shaderParms[ SHADERPARM_BLUE ]  = color[2] * color[3];
+	}
+
+	GetGlobalJointTransform( true, guiLightJointView, guiLight.origin, guiLight.axis, guiLightOffset );
+	UpdateLight( WPLIGHT_GUI );
 }
 
 /*
@@ -1338,11 +1387,15 @@ rvWeapon::Think
 */
 void rvWeapon::Think ( void ) {
 
-	// Cache the authoritative player origin and axis.
-	playerViewOrigin = owner->firstPersonViewOrigin;
-	playerViewAxis   = owner->firstPersonViewAxis;
-	CalculateViewModelTransform( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
-	UpdatePresentationViewModelState( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
+	// Prediction can replay this weapon without advancing the authoritative
+	// frame.  Preserve the last real endpoint so the presentation interpolation
+	// history cannot be overwritten by a client reconciliation pass.
+	if ( gameLocal.isNewFrame || presentationViewModelTime < 0 ) {
+		playerViewOrigin = owner->firstPersonViewOrigin;
+		playerViewAxis = owner->firstPersonViewAxis;
+		CalculateViewModelTransform( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
+		UpdatePresentationViewModelState( playerViewOrigin, playerViewAxis, viewModelOrigin, viewModelAxis );
+	}
 
 	if ( viewModel ) {
 		// set the physics position and orientation
@@ -1571,7 +1624,19 @@ rvWeapon::ReadFromSnapshot
 ================
 */
 void rvWeapon::ReadFromSnapshot( const idBitMsgDelta &msg ) {
-	ammoClip = msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
+	const int decodedAmmo = DecodeSnapshotAmmo( msg );
+	if ( msg.IsReadOverflowed() ) {
+		return;
+	}
+	ApplySnapshotAmmo( decodedAmmo );
+}
+
+int rvWeapon::DecodeSnapshotAmmo( const idBitMsgDelta &msg ) {
+	return msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
+}
+
+void rvWeapon::ApplySnapshotAmmo( int decodedAmmo ) {
+	ammoClip = decodedAmmo;
 }
 
 /*
@@ -1580,7 +1645,7 @@ rvWeapon::SkipFromSnapshot
 ================
 */
 void rvWeapon::SkipFromSnapshot ( const idBitMsgDelta &msg ) {
-	msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
+	DecodeSnapshotAmmo( msg );
 }
 
 /*
@@ -2679,7 +2744,9 @@ This returns the offset and axis of a weapon bone in world space, suitable for a
 bool rvWeapon::GetGlobalJointTransform ( bool view, const jointHandle_t jointHandle, idVec3 &origin, idMat3 &axis, const idVec3& offset ) {
 	if ( view) {
 		// view model
-		if ( viewModel && viewAnimator->GetJointTransform( jointHandle, gameLocal.time, origin, axis ) ) {
+		if ( viewModel &&
+			 ( viewAnimator->GetPresentationJointTransform( jointHandle, origin, axis ) ||
+			   viewAnimator->GetJointTransform( jointHandle, gameLocal.time, origin, axis ) ) ) {
 			origin = offset * axis + origin;
 			origin = origin * ForeshortenAxis(viewModelAxis) + viewModelOrigin;
 			axis = axis * viewModelAxis;

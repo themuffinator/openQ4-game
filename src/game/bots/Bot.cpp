@@ -7,9 +7,13 @@
 
 idCVar bot_pathdebug( "bot_pathdebug", "0", CVAR_BOOL | CVAR_CHEAT, "force the bot to path to player" );
 idCVar bot_goaldist( "bot_goaldist", "20", CVAR_INTEGER | CVAR_CHEAT, "" );
-idCVar bot_debugnav( "bot_debugnav", "0", CVAR_BOOL | CVAR_CHEAT, "draws navmesh paths for the bot" );
+// These two names are also registered by game-mp. openQ4 can swap the game
+// modules in one process, so their type, default and policy flags must stay in
+// sync. The SP bot only asks for their boolean value, which keeps 0/1 console
+// and config behavior while accepting the MP diagnostics' integer levels.
+idCVar bot_debugnav( "bot_debugnav", "0", CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "draws navmesh paths for the bot" );
 idCVar bot_showstate( "bot_showstate", "0", CVAR_BOOL | CVAR_CHEAT, "draws the bot state above the bot" );
-idCVar bot_debug( "bot_debug", "1", CVAR_BOOL, "shows debug info for the bot" );
+idCVar bot_debug( "bot_debug", "0", CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "shows debug info for the bot" );
 idCVar bot_skill( "bot_skill", "3", CVAR_INTEGER | CVAR_ARCHIVE, "bot skill depth (1-5)", 1, 5 );
 
 CLASS_DECLARATION( idPlayer, rvmBot )

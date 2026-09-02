@@ -109,8 +109,8 @@ void rvClientEffect::FreeEffectDef ( void ) {
 rvClientEffect::UpdateBind
 ================
 */
-void rvClientEffect::UpdateBind ( void ) {
-	rvClientEntity::UpdateBind ( );
+void rvClientEffect::UpdateBind ( int presentationTime ) {
+	rvClientEntity::UpdateBind ( presentationTime );
 
 	renderEffect.origin = worldOrigin;
 	
@@ -119,7 +119,11 @@ void rvClientEffect::UpdateBind ( void ) {
 		idVec3 endOrigin;		
 		idVec3 dir;
 
-		static_cast<idAnimatedEntity*>(bindMaster.GetEntity())->GetJointWorldTransform ( endOriginJoint, gameLocal.time, endOrigin, axis );
+		idAnimatedEntity *animatedMaster = static_cast<idAnimatedEntity*>( bindMaster.GetEntity() );
+		if ( presentationTime < 0 ||
+			 !animatedMaster->GetPresentationJointWorldTransform( endOriginJoint, endOrigin, axis ) ) {
+			animatedMaster->GetJointWorldTransform( endOriginJoint, gameLocal.time, endOrigin, axis );
+		}
 		SetEndOrigin ( endOrigin );
 		
 		dir = (endOrigin - worldOrigin);
@@ -226,12 +230,12 @@ effect without respawning or ageing particles a second time.  The completion
 result is ignored for the same reason -- Think() owns the effect's lifetime.
 ================
 */
-void rvClientEffect::UpdatePresentationTransform ( void ) {
+void rvClientEffect::UpdatePresentationTransform ( int presentationTime ) {
 	if( effectDefHandle < 0 || !renderEffect.declEffect ) {
 		return;
 	}
 
-	UpdateBind();
+	UpdateBind( presentationTime );
 	gameRenderWorld->UpdateEffectDef( effectDefHandle, &renderEffect, gameLocal.time );
 }
 

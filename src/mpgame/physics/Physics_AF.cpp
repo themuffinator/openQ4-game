@@ -8036,23 +8036,32 @@ idPhysics_AF::ReadFromSnapshot
 void idPhysics_AF::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	int i, num;
 	idCQuat quat;
+	AFPState_t decodedCurrent = current;
+	idList< AFBodyPState_t > decodedBodies;
+	decodedBodies.SetNum( bodies.Num() );
 
 	// TODO: Check that this conditional write to delta message is OK
-	current.atRest = msg.ReadLong();
-	current.noMoveTime = msg.ReadFloat();
-	current.activateTime = msg.ReadFloat();
-	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[3] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[4] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[5] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.atRest = msg.ReadLong();
+	decodedCurrent.noMoveTime = msg.ReadFloat();
+	decodedCurrent.activateTime = msg.ReadFloat();
+	decodedCurrent.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.pushVelocity[3] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.pushVelocity[4] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
+	decodedCurrent.pushVelocity[5] = msg.ReadDeltaFloat( 0.0f, AF_VELOCITY_EXPONENT_BITS, AF_VELOCITY_MANTISSA_BITS );
 
 	num = msg.ReadByte();
-	assert( num == bodies.Num() );
+	if ( msg.IsReadOverflowed() || num != bodies.Num() ) {
+		if ( !msg.IsReadOverflowed() ) {
+			msg.MarkReadOverflowed();
+		}
+		return;
+	}
 
 	for ( i = 0; i < bodies.Num(); i++ ) {
-		AFBodyPState_t *state = bodies[i]->current;
+		AFBodyPState_t *state = &decodedBodies[i];
+		*state = *bodies[i]->current;
 
 		state->worldOrigin[0] = msg.ReadFloat();
 		state->worldOrigin[1] = msg.ReadFloat();
@@ -8075,6 +8084,13 @@ void idPhysics_AF::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 */
 		state->worldAxis = quat.ToMat3();
 	}
+	if ( msg.IsReadOverflowed() ) {
+		return;
+	}
 
+	current = decodedCurrent;
+	for ( i = 0; i < bodies.Num(); i++ ) {
+		*bodies[i]->current = decodedBodies[i];
+	}
 	UpdateClipModels();
 }

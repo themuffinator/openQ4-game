@@ -519,6 +519,9 @@ public:
 	void					SmoothenRenderView( bool firstPerson );
 	void					CalculateRenderView( void );	// called every tic by player code
 	void					CalculateFirstPersonView( void );
+	void					StartBenchmarkViewSweep( float degrees, int durationMS );
+	void					StopBenchmarkViewSweep( void );
+	bool					BenchmarkViewSweepActive( void ) const { return viewSweepActive; }
 	void					ResetPresentationViewState( void );
 	void					UpdatePresentationViewState( void );
 	void					GetPresentationViewPos( idVec3 &origin, idMat3 &axis ) const;
@@ -530,6 +533,7 @@ public:
 	
 	void					DrawShadow( renderEntity_t *headRenderEnt );
 	void					UpdateMultiplayerVisibilityEffects( renderEntity_t *headRenderEnt );
+	void					UpdateZoomGuiViewState( void );
 	void					DrawHUD( idUserInterface *hud );
 	void					StartRadioChatter ( void );
 	void					StopRadioChatter ( void );
@@ -932,6 +936,17 @@ private:
 	idInterpolate<float>	centerView;
 	bool					fxFov;
 
+	// Deterministic benchmark view sweep.  Driven entirely from game time so
+	// automated performance captures can pan the camera without synthesizing
+	// operating-system mouse or keyboard input.  Transient by design: never
+	// written to save games, and cleared on spawn.
+	bool					viewSweepActive;
+	int						viewSweepStartTime;
+	int						viewSweepDurationMS;
+	float					viewSweepDegrees;
+	float					viewSweepStartYaw;
+	float					viewSweepPitch;
+
 	float					influenceFov;
 	int						influenceActive;		// level of influence.. 1 == no gun or hud .. 2 == 1 + no movement
  	idEntity *				influenceEntity;
@@ -1124,6 +1139,7 @@ private:
 	void					ClearCheatState				( void );
 // RAVEN END
 	void					UpdateViewAngles			( void );
+	bool					UpdateBenchmarkViewSweep	( void );
 	void					UpdatePowerUps				( void );
  	void					UpdateDeathSkin				( bool state_hitch );
 	void					UpdateFocus					( void );

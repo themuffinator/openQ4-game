@@ -688,9 +688,13 @@ extern rvGameLog *				gameLog;
 // 42: durable server MVD publication results for competitive match evidence
 // 43: two-phase game shutdown keeps module decl/animation/idLib state alive
 //     until the engine declaration manager has released module-owned decls
-// 44: common exposes a transient game-owned time scale independently of the
+// 44: shared idFile/idFileSystem ABI adds engine-owned memory staging,
+//     semantic preload records, and source-authoritative generated caches
+// 45: shared idRenderSystem presentation state and temporal resolve command
+//     for scene-resolution rendering with native-resolution composition/UI
+// 46: common exposes a transient game-owned time scale independently of the
 //     public timescale CVar
-const int GAME_API_VERSION		= 44;
+const int GAME_API_VERSION		= 46;
 
 struct gameImport_t {
 

@@ -12,7 +12,6 @@ public:
 	rvWeaponMachinegun ( void );
 
 	virtual void		Spawn				( void );
-	virtual void		Think				( void );
 	void				Save				( idSaveGame *savefile ) const;
 	void				Restore				( idRestoreGame *savefile );
 	void					PreSave				( void );
@@ -97,19 +96,6 @@ rvWeaponMachinegun::PostSave
 void rvWeaponMachinegun::PostSave ( void ) {
 }
 
-
-/*
-================
-rvWeaponMachinegun::Think
-================
-*/
-void rvWeaponMachinegun::Think()
-{
-	rvWeapon::Think();
-	if ( zoomGui && owner == gameLocal.GetLocalPlayer( ) ) {
-		zoomGui->SetStateFloat( "playerYaw", playerViewAxis.ToAngles().yaw );
-	}
-}
 
 /*
 ================

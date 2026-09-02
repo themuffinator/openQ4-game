@@ -105,6 +105,8 @@ public:	// common physics interface
 
 	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
 	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	bool					DecodeSnapshotState( const idBitMsgDelta &msg, particlePState_t &decoded ) const;
+	void					ApplySnapshotState( const particlePState_t &decoded );
 
 	idEntityPtr<idEntity>	extraPassEntity;
 
