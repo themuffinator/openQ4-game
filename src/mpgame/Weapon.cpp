@@ -1352,6 +1352,36 @@ creating an effect, because this runs several times per authoritative tic.
 ================
 */
 void rvWeapon::UpdatePresentationEffects( void ) {
+	// Think() places the weapon's lights from the authoritative view model pose,
+	// but the view model is drawn from the interpolated presentation pose, so at
+	// refresh rates above the game tick the two are up to a whole tic apart.  The
+	// GUI light is bound to a joint on the gun and is only a few units across
+	// (glightRadius defaults to 3), so that drift slides the lit spot across the
+	// ammo display: it shimmers while the view moves, and whatever leaves the
+	// radius goes dark.  Only weapons that declare mtr_guiLightShader have this
+	// light, which is why it shows on the machinegun, shotgun, hyperblaster and
+	// nailgun and nowhere else.  The caller is holding the interpolated pose, so
+	// re-resolving the joint here puts the light back on the gun being drawn.
+	if ( viewModel == NULL || owner == NULL ) {
+		return;
+	}
+
+	renderLight_t &guiLight = lights[ WPLIGHT_GUI ];
+	if ( guiLight.lightRadius[0] == 0.0f || guiLightJointView == INVALID_JOINT ) {
+		return;
+	}
+
+	// The colour is an evaluated GUI expression driven by GUI time, so sample it
+	// on the same frame the light is placed rather than reusing the tic's value.
+	if ( viewModel->GetRenderEntity()->gui[0] != NULL ) {
+		const idVec4 color = viewModel->GetRenderEntity()->gui[0]->GetLightColor();
+		guiLight.shaderParms[ SHADERPARM_RED ]   = color[0] * color[3];
+		guiLight.shaderParms[ SHADERPARM_GREEN ] = color[1] * color[3];
+		guiLight.shaderParms[ SHADERPARM_BLUE ]  = color[2] * color[3];
+	}
+
+	GetGlobalJointTransform( true, guiLightJointView, guiLight.origin, guiLight.axis, guiLightOffset );
+	UpdateLight( WPLIGHT_GUI );
 }
 
 /*

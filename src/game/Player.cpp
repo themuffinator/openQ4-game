@@ -4697,8 +4697,6 @@ void idPlayer::DrawHUD( idUserInterface *_hud ) {
 		return;
 	}
 
-	UpdateZoomGuiViewState();
-
 	{
 		enum yawDebugField_t {
 			YAWDBG_VIEW = 0,

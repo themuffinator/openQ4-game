@@ -4703,6 +4703,13 @@ void idGameLocal::PreparePlayerSceneForRender( idPlayer *player ) {
 		presentationAnimationTime = time;
 	}
 	player->CalculateRenderView();
+	// The weapon's scope GUI is an in-world surface drawn with the 3D scene, so
+	// its yaw has to be current before that scene is rendered.  Updating it from
+	// DrawHUD set it during the 2D overlay, after R_RenderGuiSurf had already
+	// drawn the scope for this frame, which left the compass a frame behind the
+	// gun: invisible while the view is still, and a varying offset that shimmers
+	// and swings the rotated element out of its window while turning.
+	player->UpdateZoomGuiViewState();
 
 	// Movers and everything riding them share the camera's presentation time.
 	// Without this the eye is drawn interpolated while the lift under it is
