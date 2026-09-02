@@ -9261,10 +9261,21 @@ void idGameLocal::UpdatePresentationEntityPoses( void ) {
 					jointModYaw = modMat.ToAngles().yaw;
 				}
 			}
-			Printf( "presentationFrame: f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f\n",
+			// The drawn skeleton itself: if this is constant between frames inside a
+			// tic then the presentation pose never reaches the model, whatever the
+			// root and the modifier are doing.
+			idVec3 drawnJoint;
+			bool haveDrawnJoint = false;
+			if ( animator != NULL ) {
+				const int probeJoint = animator->NumJoints() > 4 ? 4 : 0;
+				haveDrawnJoint = animator->GetPresentationJointDiagnostic( probeJoint, drawnJoint );
+			}
+			Printf( "presentationFrame: f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f animT=%d drawn=%d %.3f %.3f %.3f\n",
 				GetPresentationInterpolationFraction(),
 				haveRoot ? rootAxis.ToAngles().yaw : 0.0f,
-				haveRoot ? 1 : 0, jointModCount, jointModYaw );
+				haveRoot ? 1 : 0, jointModCount, jointModYaw,
+				GetPresentationAnimationTimeMsec(),
+				haveDrawnJoint ? 1 : 0, drawnJoint.x, drawnJoint.y, drawnJoint.z );
 		}
 		if ( localPlayer != NULL && time != lastPresentationPoseReportTime ) {
 			lastPresentationPoseReportTime = time;

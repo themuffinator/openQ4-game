@@ -650,6 +650,7 @@ class idAnimator{
 	};
 	jointModPrev_t *		FindJointModPrev( int jointnum, bool create );
 	bool					GetJointModDiagnostic( int index, int &jointnum, idMat3 &mat ) const;
+	bool					GetPresentationJointDiagnostic( int index, idVec3 &pos ) const;
 	void						ClearPresentationFrame( void );
 	bool						FrameHasChanged( int animtime ) const;
 	void						GetDelta( int fromtime, int totime, idVec3 &delta ) const;

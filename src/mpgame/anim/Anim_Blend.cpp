@@ -5210,6 +5210,16 @@ idAnimator::jointModPrev_t *idAnimator::FindJointModPrev( int jointnum, bool cre
 	return &jointModPrevs[ jointModPrevs.Append( entry ) ];
 }
 
+bool idAnimator::GetPresentationJointDiagnostic( int index, idVec3 &pos ) const {
+	// Deliberately not gated on presentationJointsValid: the caller clears that
+	// flag after pushing, while the renderer still reads this buffer.
+	if ( presentationJoints == NULL || index < 0 || index >= numJoints ) {
+		return false;
+	}
+	pos = presentationJoints[ index ].ToVec3();
+	return true;
+}
+
 bool idAnimator::GetJointModDiagnostic( int index, int &jointnum, idMat3 &mat ) const {
 	if ( index < 0 || index >= jointMods.Num() ) {
 		return false;

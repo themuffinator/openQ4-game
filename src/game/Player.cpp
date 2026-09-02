@@ -13337,6 +13337,18 @@ bool idPlayer::CanInterpolatePresentationView( void ) const {
 		return false;
 	}
 
+	// g_presentationInterpolation 0 takes every entity off the presentation clock
+	// (idGameLocal::SamplePresentationEntityPoses clears the whole list), and the
+	// eye has to go with them.  Leaving the camera interpolated while the world
+	// and the player's own body step at 60 Hz produces exactly the beat this
+	// system exists to remove: with the body suppressed in first person the only
+	// witness is the player's own shadow, which slides smoothly under a stepping
+	// silhouette.  The cvar's contract is "back on the 60 Hz simulation clock",
+	// so honour it here too.
+	if ( !g_presentationInterpolation.GetBool() ) {
+		return false;
+	}
+
 	// The eye must never be drawn on a different presentation time than what is
 	// carrying it.  A moving lift drawn on the authoritative pose while the eye
 	// is drawn interpolated drifts by one tic of the lift's own travel and snaps
