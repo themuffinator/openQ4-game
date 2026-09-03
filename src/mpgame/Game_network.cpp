@@ -568,6 +568,9 @@ void idGameLocal::ServerClientDisconnect( int clientNum ) {
 	// openQ4: drop this slot's reliable message cooldowns so the next player to
 	// take the slot starts clean
 	ResetClientReliableFlood( clientNum );
+	// ...and its recorded positions, so a shot cannot be rewound onto the previous
+	// occupant's 1024 ms of history.
+	InvalidateMPLagCompensationHistory( clientNum );
 
 	// only drop MP clients if we're in multiplayer and the server isn't going down
 	if ( gameLocal.isMultiplayer && !(gameLocal.isListenServer && clientNum == gameLocal.localClientNum ) ) {

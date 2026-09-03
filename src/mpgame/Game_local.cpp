@@ -9366,43 +9366,65 @@ bool idGameLocal::ComputeMPLagCompensationRewind( const idPlayer *shooter, int &
 		return false;
 	}
 
-	int rewindEstimateMS = 0;
-
-	// openQ4: prefer the authoritative command age when the client's clock is
-	// genuinely behind ours, because that measures the real end-to-end pipeline.
-	// In practice it rarely is: idAsyncClient deliberately runs its game clock
-	// AHEAD of the server by net_clientPrediction, so usercmd.gameTime normally
-	// exceeds our own time and this yields nothing.  It is kept for the case
-	// where a client's clock has fallen behind, where it is the better estimate.
-	if ( shooter->usercmd.gameTime > 0 ) {
-		rewindEstimateMS = time - shooter->usercmd.gameTime;
+	const int clientNum = shooter->entityNumber;
+	if ( clientNum < 0 || clientNum >= MAX_CLIENTS ) {
+		return false;
 	}
 
-	// openQ4: otherwise rewind by the one-way trip the command took to reach us.
-	// Do NOT subtract the client's prediction lead: prediction advances the
-	// client's own view, it does not remove the travel time of the command, and
-	// subtracting it drove the whole estimate negative - the reason this
-	// compensation measurably did nothing before.  Half the round trip is the
-	// conservative half of the usual "ping + interpolation" rewind, which suits
-	// an engine whose clients already extrapolate remote players forward from
-	// the relayed user commands rather than interpolating between snapshots.
-	if ( rewindEstimateMS <= 0 ) {
-		int pingMS = 0;
-		if ( shooter->entityNumber >= 0 && shooter->entityNumber < MAX_CLIENTS ) {
-			pingMS = networkSystem->ServerGetClientPing( shooter->entityNumber );
-		}
+	// This used to start from time - shooter->usercmd.gameTime, which cannot measure anything:
+	// the server files a client's command at THAT client's own frame index and executes the
+	// slot for the frame it is running, and idGameLocal::RunFrame has already advanced time past
+	// it, so the difference is a structural GetMSec() at any ping - and a duplicated command is
+	// re-stamped with the server's own clock to the same effect.  The ping/2 fallback underneath
+	// was therefore unreachable.
+	//
+	// What the rewind actually owes the shooter is the age of the world it was aiming at.  Take
+	// the client's own reported prediction lead - which is what it is drawing ahead by - and cap
+	// it with the round trip the server measured itself, so a client cannot choose its own
+	// rewind by misreporting or by sitting on its ping replies.
+	int reported = networkSystem->ServerGetClientPrediction( clientNum );
+	int measured = networkSystem->ServerGetClientPing( clientNum );
 
-		if ( pingMS < 0 || pingMS >= 99999 ) {
-			pingMS = 0;
-		}
-
-		rewindEstimateMS = pingMS / 2;
+	// Both report 99999 for a slot that is not fully connected, and reported arrives as a
+	// client-authored short, so it can be anywhere in -32768..32767.
+	if ( reported < 0 || reported >= 99999 ) {
+		reported = 0;
 	}
+	reported = idMath::ClampInt( 0, 1000, reported );
+	if ( measured < 0 || measured >= 99999 ) {
+		measured = 0;
+	}
+
+	const int claim = ( reported > 0 ) ? reported + GetMSec() : 0;
+	const int ceiling = ( measured > 0 ) ? measured + net_mpLagCompSlackMS.GetInteger() : 0;
+
+	// A listen server's own player and a bot both leave these at zero and rewind nothing, which
+	// is right: neither has a wire between it and the world it aimed at.
+	int rewindEstimateMS = Min( claim, ceiling ) - RemoteExtrapolationMS();
 
 	rewindEstimateMS += net_mpLagCompBiasMS.GetInteger();
 	rewindMS = idMath::ClampInt( 0, maxRewindMS, rewindEstimateMS );
 	return rewindMS > 0;
 }
+
+/*
+================
+idGameLocal::RemoteExtrapolationMS
+
+How far ahead of the last snapshot a client already draws remote players for itself.
+
+Lag compensation and client-side remote extrapolation are two corrections to the same error,
+and applying both at full strength does not halve it - it inverts it, and the shooter has to
+lead backwards.  So whatever a client extrapolates forward has to come off the rewind.  While
+net_mpPredictMode is a client-local choice the server cannot observe, the honest answer is
+that the server does not know, and the two features must not both be on: that is why
+net_mpLagCompensation ships at 0.
+================
+*/
+int idGameLocal::RemoteExtrapolationMS( void ) const {
+	return 0;
+}
+
 
 /*
 ================
@@ -9491,6 +9513,56 @@ void idGameLocal::EndMPLagCompensation( mpLagCompRestore_t restoreState[MAX_CLIE
 		restore.physics->SetOrigin( restore.originalOrigin + translated );
 		restore.physics->SetAxis( restore.originalAxis );
 	}
+}
+
+/*
+================
+idGameLocal::ResolveMPLagCompensationHit
+
+Put a hit target back in the present the moment the trace has resolved against it, and carry
+the trace's geometry forward with it.
+
+Everything a hit does afterwards - the damage, the blood and the wound decal, the impact
+effect, the PVS areas that effect is broadcast to, the impulse, and the ragdoll the corpse
+starts from - was previously computed at the target's PAST position, so a body killed at range
+fell where it used to be and the effect was routed to whoever could see there.  The gauntlet
+and the lightning gun already restored before they damaged; this makes the hit-scan weapons
+agree with them.
+
+Translation only.  A player's physics axis is set once per life from the spawn yaw and
+idPhysics_Player never rotates it, so the rewound and original axes are the same and there is
+no rotation to carry.
+================
+*/
+bool idGameLocal::ResolveMPLagCompensationHit( const idEntity *hit, mpLagCompRestore_t restoreState[MAX_CLIENTS], int &restoreCount, trace_t &tr, idVec3 *extraPoint ) {
+	if ( !hit ) {
+		return false;
+	}
+
+	for ( int i = 0; i < restoreCount; i++ ) {
+		mpLagCompRestore_t &restore = restoreState[ i ];
+		if ( restore.player != hit ) {
+			continue;
+		}
+
+		const idVec3 shift = restore.originalOrigin - restore.rewoundOrigin;
+
+		// Restore this one entry now; EndMPLagCompensation still restores the rest.
+		mpLagCompRestore_t single = restore;
+		EndMPLagCompensation( &single, 1 );
+
+		tr.c.point += shift;
+		tr.endpos += shift;
+		tr.c.dist = tr.c.normal * tr.c.point;
+		if ( extraPoint ) {
+			*extraPoint += shift;
+		}
+
+		restoreState[ i ] = restoreState[ --restoreCount ];
+		return true;
+	}
+
+	return false;
 }
 
 /*
@@ -9659,6 +9731,17 @@ idEntity* idGameLocal::HitScan(
 				goto hitScanDone;
 			}
 
+			collisionPoint = tr.c.point - ( tr.c.normal * tr.c.point - tr.c.dist ) * tr.c.normal;
+			ent			   = entities[ tr.c.entityNum ];
+
+			// The trace resolved against the rewound world; everything below acts in the
+			// present.  Put this target back before any of it runs, and carry the hit point
+			// with it - including the PVS areas the effect broadcast is routed to, which is why
+			// that block now sits after this rather than before it.
+			if ( lagCompApplied ) {
+				ResolveMPLagCompensationHit( ent, lagCompRestore, lagCompRestoreCount, tr, &collisionPoint );
+			}
+
 			// computing the collisionArea from the collisionPoint fails sometimes
 			if ( areas ) {
 				collisionArea  = pvs.GetPVSArea( tr.c.point );
@@ -9666,8 +9749,6 @@ idEntity* idGameLocal::HitScan(
 					areas[1] = collisionArea;
 				}
 			}
-			collisionPoint = tr.c.point - ( tr.c.normal * tr.c.point - tr.c.dist ) * tr.c.normal;
-			ent			   = entities[ tr.c.entityNum ];
 			actualHitEnt   = NULL;
 			start		   = collisionPoint;
 
