@@ -37,6 +37,7 @@ extern idCVar	g_railTrail;
 extern idCVar	g_napalmTrail;
 
 extern idCVar	g_predictedProjectiles;
+extern idCVar	g_projectilePredictionDebug;
 
 extern idCVar	g_disasm;
 extern idCVar	g_debugBounds;

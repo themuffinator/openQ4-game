@@ -1044,7 +1044,7 @@ public:
 	int						LiquidContentsAtPoint	( const idVec3 &point, const idEntity *passEntity );
 	idVec3					LiquidBoundaryBetween	( const idVec3 &inside, const idVec3 &outside, int liquidContents, const idEntity *passEntity );
 	const char *			LiquidTypeName			( int liquidContents ) const;
-	void					PlayLiquidImpact		( int liquidContents, const idVec3 &point, const idVec3 &normal, idEntity *ent, const idDict *callerArgs );
+	void					PlayLiquidImpact		( int liquidContents, const idVec3 &point, const idVec3 &normal, idEntity *ent, const idDict *callerArgs, bool broadcast = true );
 	int						LiquidLevelForEntity	( idEntity *ent, int &liquidType );
 	void					PlayLiquidSoundOn		( idEntity *ent, const char *key, const s_channelType channel );
 	void					PlayLiquidEffectAt		( const char *key, const idVec3 &origin );

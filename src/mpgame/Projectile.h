@@ -50,6 +50,7 @@ public :
 	void					Fizzle( void );
 
 	static idVec3			GetVelocity( const idDict *projectile );
+	idVec3					DeadReckonOrigin( int atTime ) const;
 	static idVec3			GetGravity( const idDict *projectile );
 
 	void					SetSpeed		( float s, int accelTime = 0 );
@@ -119,6 +120,12 @@ protected:
 	int						hitCount;
 // ddynerman: pre-prediction ( rocket jumping )
 	int						prePredictTime;
+	// The prestep the SERVER folded into this leg's first physics step.  Equal to
+	// prePredictTime for a normal launch, and zero for a leg re-stamped by a
+	// teleporter, which moves launchTime and launchOrig without re-arming
+	// predictTime.  Drives client dead reckoning only, and is deliberately not
+	// serialised: both ends derive it from the shared entityDef.
+	int						deadReckonPrestep;
 // RAVEN END
 	typedef enum {
 		SPAWNED = 0,

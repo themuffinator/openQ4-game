@@ -74,6 +74,7 @@ idProjectile::idProjectile( void ) {
 	fl.networkSync		= true;
 
 	prePredictTime		= 0;
+	deadReckonPrestep	= 0;
 
 	syncPhysics			= false;
 
@@ -108,6 +109,10 @@ void idProjectile::Spawn( void ) {
  	physicsObj.PutToRest();
  	SetPhysics( &physicsObj );
 	prePredictTime = spawnArgs.GetInt( "predictTime", "0" );
+	// Set here rather than in Launch: the terminal-state reconstructions in
+	// ReadFromSnapshot rebuild a projectile without Launch ever having run, and they
+	// dead reckon too.
+	deadReckonPrestep = prePredictTime;
 	syncPhysics = spawnArgs.GetBool( "net_syncPhysics", "0" );
 
 	if ( gameLocal.isClient ) {
@@ -350,6 +355,36 @@ void idProjectile::FreeLightDef( void ) {
 
 /*
 =================
+idProjectile::DeadReckonOrigin
+
+Where the server's copy of this projectile is at atTime, reproduced analytically.
+
+The server folds the def's predictTime into the projectile's FIRST physics step.  Launch
+records launchOrig before any physics has run and latches predictTime; the projectile is
+appended to gameLocal.activeEntities by BecomeActive and is therefore visited on its own
+launch frame by the forward walk in idGameLocal::RunFrame; and idEntity::RunPhysics
+evaluates ( endTime - startTime + predictTime ) once and clears it.  So the authoritative
+trajectory is launchOrig + v * ( t - launchTime + tic + prestep ).  This helper supplies
+the prestep, and every caller is followed by exactly one RunPhysics tic which supplies
+the tic.
+
+Every copy of this expression used to omit the prestep, so a client drew
+projectile_rocket_mp 46.75 units short of the server for the projectile's whole flight
+and snapped backward by that amount on its second visible frame.  Measured on a listen
+server, as the flight time the travelled distance implies minus the flight time actually
+elapsed: server 65-66 ms, remote client 13-15 ms.
+=================
+*/
+idVec3 idProjectile::DeadReckonOrigin( int atTime ) const {
+	// Clamped because a snapshot whose gameTime equals launchTime - ClientReadSnapshot
+	// winds the clock back - would otherwise seed a negative flight time and place a
+	// nailgun or hyperblaster bolt behind the muzzle, inside the shooter's own bounds.
+	const int flightMS = Max( 0, atTime - launchTime + deadReckonPrestep );
+	return launchOrig + ( flightMS * 0.001f ) * launchSpeed * launchDir;
+}
+
+/*
+=================
 idProjectile::Launch
 =================
 */
@@ -546,7 +581,12 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 
 	hitCount = 0;
 
-	predictTime = prePredictTime;
+	// Only the server integrates the prestep through physics.  A client reproduces it
+	// analytically in DeadReckonOrigin, and letting its own RunPhysics consume
+	// predictTime as well puts the first visible frame 50 ms ahead and every frame after
+	// it 46.75 units behind.  isClient is false on a listen server, so the host keeps the
+	// authoritative behaviour.
+	predictTime = gameLocal.isClient ? 0 : prePredictTime;
 
 	if ( spawnArgs.GetFloat( "delay_emit_damage" ) > 0.0f ) {
 		PostEventSec( &EV_EmitDamage, spawnArgs.GetFloat( "wait_emit_damage", "0" ), this );
@@ -559,7 +599,7 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 		launchDir = dir;
 	} else {
 		if ( predictedProjectiles ) {
-			physicsObj.Evaluate( gameLocal.time - launchTime, gameLocal.time );
+			physicsObj.Evaluate( gameLocal.time - launchTime + deadReckonPrestep, gameLocal.time );
 		}
 	}
 
@@ -592,13 +632,29 @@ void idProjectile::Think( void ) {
 		
 		RunPhysics();
 
+		// openQ4: how far this projectile has travelled along its launch direction, expressed as
+		// the flight time that displacement implies, minus the flight time actually elapsed.  Both
+		// ends derive it from the same replicated launchOrig/launchTime/launchDir, so the server's
+		// figure and a client's are directly comparable with nothing added to the wire.
+		if ( g_projectilePredictionDebug.GetInteger() > 0 && state == LAUNCHED && launchSpeed > 1.0f ) {
+			const float along = ( GetPhysics()->GetOrigin() - launchOrig ) * launchDir;
+			const int offsetMS = idMath::Ftoi( ( along / launchSpeed ) * 1000.0f ) - ( gameLocal.time - launchTime );
+			gameLocal.Printf( "MPProj: %s ent=%d client=%d offsetMS=%d prestep=%d\n",
+				GetEntityDefName(), entityNumber, gameLocal.isClient ? 1 : 0, offsetMS, prePredictTime );
+		}
+
 // openQ4 BEGIN
 		// The physics mask deliberately excludes liquids. Compare the endpoints of this frame's
 		// movement to find entry and exit crossings, place a splash on the actual boundary, and
 		// leave the projectile's velocity untouched.
 		const idVec3 currentOrigin = physicsObj.GetOrigin();
 		const int currentLiquid = gameLocal.LiquidContentsAtPoint( currentOrigin, this );
-		if ( previousLiquid != currentLiquid ) {
+		// Server only: a client reaches this through ClientPredictionThink on a straight,
+		// unclipped dead-reckoned line, so it would splash on boundaries the authoritative
+		// trajectory never crossed, and it would splash again when the server's broadcast
+		// arrived.  The broadcast is the copy that is right for everyone, including clients
+		// that are not simulating this projectile.
+		if ( !gameLocal.isClient && previousLiquid != currentLiquid ) {
 			const int crossedLiquid = previousLiquid ? previousLiquid : currentLiquid;
 			const idVec3 insidePoint = currentLiquid ? currentOrigin : previousOrigin;
 			const idVec3 outsidePoint = currentLiquid ? previousOrigin : currentOrigin;
@@ -678,7 +734,10 @@ void idProjectile::Think( void ) {
 
 	// add the light
  	if ( renderLight.lightRadius.x > 0.0f && g_projectileLights.GetBool() ) {
-		renderLight.origin = GetPhysics()->GetOrigin() + GetPhysics()->GetAxis() * lightOffset;
+		// Composed from the visual transform rather than from physics: the drawn
+		// projectile rides the presentation clock, and a light built from physics steps
+		// 15 units a tic under an eye that does not.
+		renderLight.origin = renderEntity.origin + GetPhysics()->GetAxis() * lightOffset;
 		renderLight.axis = GetPhysics()->GetAxis();
 		if ( ( lightDefHandle != -1 ) ) {
 			if ( lightEndTime > 0 && gameLocal.time <= lightEndTime + gameLocal.GetMSec() ) {
@@ -1621,11 +1680,8 @@ void idProjectile::ClientPredictionThink( void ) {
 		return;
 	}
 	if ( !syncPhysics && state == LAUNCHED ) {
-		idMat3 axis = launchDir.ToMat3();
-		idVec3 origin( launchOrig );
-		origin += ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir;
-		physicsObj.SetAxis( axis );
-		physicsObj.SetOrigin( origin );
+		physicsObj.SetAxis( launchDir.ToMat3() );
+		physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 		physicsObj.SetLinearVelocity( launchSpeed * launchDir );
 	}
 	Think();
@@ -1690,6 +1746,18 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		return;
 	}
 
+	// A teleporter relaunch on the server re-stamps launchTime AND launchOrig without
+	// re-arming predictTime, which RunPhysics already spent on the launch frame, so that
+	// leg carries no prestep.  A match-clock shift moves launchTime on both ends by the
+	// same delta and never touches launchOrig, so the origin change is what tells the two
+	// apart; launchOrig is three full floats on the wire, so exact comparison is valid.
+	// Without this a teleported rocket is drawn 46.75 units AHEAD of the server - the
+	// same error with the sign flipped, on exactly the maps that have portals.
+	if ( state == LAUNCHED && newState == LAUNCHED &&
+		 newLaunchTime != launchTime && newLaunchOrig != launchOrig ) {
+		deadReckonPrestep = 0;
+	}
+
 	if ( syncPhysics ) {
 		physicsObj.ApplySnapshotState( newPhysicsState );
 	}
@@ -1704,12 +1772,9 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			launchTime = newLaunchTime;
 	
 			if ( !syncPhysics && state == LAUNCHED && newState == LAUNCHED ) {
-				idMat3 axis = launchDir.ToMat3();
-				idVec3 origin( launchOrig );
-				physicsObj.SetAxis( axis );
-				physicsObj.SetOrigin( origin );
+				physicsObj.SetAxis( launchDir.ToMat3() );
+				physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 				physicsObj.SetLinearVelocity( launchSpeed * launchDir );
-				physicsObj.Evaluate( gameLocal.time - launchTime, gameLocal.time );
 			}
 
 			if ( state == LAUNCHED && newState == LAUNCHED ) {
@@ -1730,12 +1795,9 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	if ( predictedProjectiles ) {
 		if ( msg.HasChanged() ) {
 			if ( !syncPhysics && state == LAUNCHED && newState == LAUNCHED ) {
-				idMat3 axis = launchDir.ToMat3();
-				idVec3 origin( launchOrig );
-				physicsObj.SetAxis( axis );
-				physicsObj.SetOrigin( origin );
+				physicsObj.SetAxis( launchDir.ToMat3() );
+				physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 				physicsObj.SetLinearVelocity( launchSpeed * launchDir );
-				physicsObj.Evaluate( gameLocal.time - launchTime, gameLocal.time );
 			}
 		}
 		UpdateVisuals();
@@ -1779,7 +1841,11 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 					if ( !syncPhysics ) {
 						launchSpeed = GetVelocity( &spawnArgs ).LengthFast();
 						physicsObj.SetAxis( launchDir.ToMat3() );
-						physicsObj.SetOrigin( launchOrig + ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir );
+						// Not followed by a RunPhysics, so this lands one tic (15 units for a
+						// rocket) short of the authoritative point.  It is a single frame of a
+						// projectile that is about to fizzle or explode, and the terminal
+						// snapshot carries no impact point to be short of.
+						physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 						physicsObj.SetLinearVelocity( launchSpeed * launchDir );
 					}
 					UpdateVisuals();
@@ -1803,7 +1869,11 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 					if ( !syncPhysics ) {
 						launchSpeed = GetVelocity( &spawnArgs ).LengthFast();
 						physicsObj.SetAxis( launchDir.ToMat3() );
-						physicsObj.SetOrigin( launchOrig + ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir );
+						// Not followed by a RunPhysics, so this lands one tic (15 units for a
+						// rocket) short of the authoritative point.  It is a single frame of a
+						// projectile that is about to fizzle or explode, and the terminal
+						// snapshot carries no impact point to be short of.
+						physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 						physicsObj.SetLinearVelocity( launchSpeed * launchDir );
 					}
 					UpdateVisuals();
@@ -1816,11 +1886,8 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		}
 		
 		if ( !syncPhysics && state == LAUNCHED ) {
-			idMat3 axis = launchDir.ToMat3();
-			idVec3 origin( launchOrig );
-			origin += ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir;
-			physicsObj.SetAxis( axis );
-			physicsObj.SetOrigin( origin );
+			physicsObj.SetAxis( launchDir.ToMat3() );
+			physicsObj.SetOrigin( DeadReckonOrigin( gameLocal.time ) );
 			physicsObj.SetLinearVelocity( launchSpeed * launchDir );
 		}
 		UpdateVisuals();

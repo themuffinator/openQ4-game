@@ -287,6 +287,7 @@ idCVar g_railTrail(					"g_railTrail",				"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR
 idCVar g_napalmTrail(				"g_napalmTrail",			"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "show fiery trails on napalm projectiles" );
 
 idCVar g_predictedProjectiles(		"g_predictedProjectiles",	"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "predict projectiles on the client" );
+idCVar g_projectilePredictionDebug(	"g_projectilePredictionDebug",	"0",		CVAR_GAME | CVAR_INTEGER, "report a projectile's dead-reckon offset against its authoritative trajectory, in milliseconds" );
 
 idCVar g_disasm(					"g_disasm",					"0",			CVAR_GAME | CVAR_BOOL, "disassemble script into base/script/disasm.txt on the local drive when script is compiled" );
 idCVar g_debugBounds(				"g_debugBounds",			"0",			CVAR_GAME | CVAR_BOOL, "checks for models with bounds > 2048" );
