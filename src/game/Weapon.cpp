@@ -3255,6 +3255,31 @@ void rvWeapon::OnLaunchProjectile ( idProjectile* proj ) {
 
 /*
 ================
+rvWeapon_AccumulateHitscanArea
+
+Folds one PVS area into the pair a hit-scan message is routed to, keeping the
+entries distinct.  Returns false once the pair is full and the area is new, so
+the caller knows the routing can no longer describe the whole burst.
+================
+*/
+static bool rvWeapon_AccumulateHitscanArea( int area, int sendAreas[ 2 ], int &numSendAreas ) {
+	if ( area < 0 ) {
+		return true;
+	}
+	for ( int i = 0; i < numSendAreas; i++ ) {
+		if ( sendAreas[ i ] == area ) {
+			return true;
+		}
+	}
+	if ( numSendAreas >= 2 ) {
+		return false;
+	}
+	sendAreas[ numSendAreas++ ] = area;
+	return true;
+}
+
+/*
+================
 rvWeapon::Hitscan
 ================
 */
@@ -3266,6 +3291,13 @@ void rvWeapon::Hitscan( const idDict& dict, const idVec3& muzzleOrigin, const id
 	float	spin;
 	idVec3	dir;
 	int		areas[ 2 ];
+	// The pair of PVS areas the whole burst is emitted to.  Only the last pellet's
+	// pair used to be sent, so a spread that crossed a portal left every client
+	// standing in the areas the earlier pellets hit with no hit-scan at all - no
+	// muzzle flash, no tracer and no impacts, for a shot they were standing in.
+	int		sendAreas[ 2 ] = { -1, -1 };
+	int		numSendAreas = 0;
+	bool	sendAreasOverflowed = false;
 
 	idBitMsg	msg;
 	byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
@@ -3344,12 +3376,21 @@ void rvWeapon::Hitscan( const idDict& dict, const idVec3& muzzleOrigin, const id
 		gameLocal.HitScan( dict, muzzleOrigin, dir, fxOrigin, owner, false, 1.0f, NULL, areas );
 
 		if ( gameLocal.isServer ) {
+			for ( int area = 0; area < 2; area++ ) {
+				if ( !rvWeapon_AccumulateHitscanArea( areas[ area ], sendAreas, numSendAreas ) ) {
+					sendAreasOverflowed = true;
+				}
+			}
 			msg.WriteDir( dir, 24 );
 			if ( i == num_hitscans - 1 ) {
-				// NOTE: we emit to the areas of the last hitscan
-				// there is a remote possibility that multiple hitscans for shotgun would cover more than 2 areas,
-				// so in some rare case a client might miss it
-				gameLocal.SendUnreliableMessagePVS( msg, owner, areas[0], areas[1] );
+				if ( sendAreasOverflowed ) {
+					// More distinct areas than the two the routing can express.  One
+					// unfiltered emit per shot costs a few bytes; dropping the shot for
+					// whoever is standing in the areas that did not fit costs the effect.
+					gameLocal.SendUnreliableMessagePVS( msg, owner, -1, -1 );
+				} else {
+					gameLocal.SendUnreliableMessagePVS( msg, owner, sendAreas[0], sendAreas[1] );
+				}
 			}
 		}
 	}
