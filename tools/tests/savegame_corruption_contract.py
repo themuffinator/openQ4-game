@@ -76,13 +76,6 @@ EXPECTED_RAW_SAVE_WRITE_COUNTS = {
     "vehicle/VehiclePosition.cpp": 5,
 }
 
-V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOT = (
-    1,
-    "19351be39d2d4077a74294c0442707ef9565fc7a2fa9af9b81e05fc9aca8b220",
-    404,
-    "windows-msvcabi-x64-le-raw1",
-)
-
 
 def read(relative_path: str) -> str:
     path = ROOT / relative_path
@@ -809,31 +802,34 @@ def validate_player_liquid_save_compatibility(tree: str) -> None:
     savegame_source = read(f"src/{tree}/gamesys/SaveGame.cpp")
     physics_source = read(f"src/{tree}/physics/Physics_Player.cpp")
     player_source = read(f"src/{tree}/Player.cpp")
-    build, source_hash, file_count, wire_abi = V3_PRE_PLAYER_LIQUID_FIELDS_SNAPSHOT
-
-    require(
-        savegame_source,
-        f'{{ {build}, "{source_hash}", {file_count}, "{wire_abi}" }}',
-        f"{tree} v3 pre-player-liquid-fields snapshot",
-    )
-    require(
-        savegame_header,
-        "HasOpenQ4PlayerLiquidSaveFields( void ) const",
-        f"{tree} pre-player-liquid-fields layout accessor declaration",
-    )
+    # The two player liquid fields entered the save in different builds, so a payload can
+    # legitimately carry the first and not the second.  A single hard-coded snapshot tuple used to
+    # gate both, which made every save written between those builds read a field it does not
+    # contain and desync the rest of the restore.  Each field is now gated on the build that
+    # introduced its write, so pin the build numbers and the per-field accessors instead.
+    for token in (
+        "OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_SWIM_SPEED = 661",
+        "OPENQ4_SAVEGAME_BUILD_WITH_PLAYER_LIQUID_SOUND = 721",
+    ):
+        require(savegame_source, token, f"{tree} per-field liquid save build gates")
+    for token in (
+        "HasOpenQ4PlayerSwimSpeedSaveField( void ) const",
+        "HasOpenQ4PlayerLiquidSoundSaveField( void ) const",
+        "HasOpenQ4PlayerLiquidSaveFieldForBuild( int firstBuildWithField ) const",
+    ):
+        require(savegame_header, token, f"{tree} per-field liquid accessor declarations")
 
     accessor = extract_function(
         savegame_source,
-        "bool idRestoreGame::HasOpenQ4PlayerLiquidSaveFields( void ) const",
-        f"{tree} pre-player-liquid-fields layout accessor",
+        "bool idRestoreGame::HasOpenQ4PlayerLiquidSaveFieldForBuild( int firstBuildWithField ) const",
+        f"{tree} per-field liquid layout accessor",
     )
     for token in (
         "!openQ4SaveGameHasCompatibilityStamp",
         "openQ4SaveGameCompatibilityVersion != OPENQ4_SAVEGAME_COMPATIBILITY_VERSION",
-        "!SaveGame_IsV3PrePlayerLiquidFieldsSnapshot(",
-        "openQ4SaveGameCompatibilitySourceFileCount",
+        "buildNumber >= firstBuildWithField",
     ):
-        require(accessor, token, f"{tree} pre-player-liquid-fields layout accessor")
+        require(accessor, token, f"{tree} per-field liquid layout accessor")
 
     restore = extract_function(
         physics_source,
@@ -844,7 +840,7 @@ def validate_player_liquid_save_compatibility(tree: str) -> None:
         restore,
         r"ReadFloat\s*\(\s*playerSpeed\s*\)\s*;\s*"
         r"swimSpeed\s*=\s*0\.0f\s*;\s*"
-        r"if\s*\(\s*savefile->HasOpenQ4PlayerLiquidSaveFields\s*\(\s*\)\s*\)\s*\{\s*"
+        r"if\s*\(\s*savefile->HasOpenQ4PlayerSwimSpeedSaveField\s*\(\s*\)\s*\)\s*\{\s*"
         r"savefile->ReadFloat\s*\(\s*swimSpeed\s*\)\s*;\s*\}\s*"
         r"savefile->ReadVec3\s*\(\s*viewForward\s*\)",
         f"{tree} conditional player swim-speed restore layout",
@@ -872,7 +868,7 @@ def validate_player_liquid_save_compatibility(tree: str) -> None:
         player_restore,
         r"ReadInt\s*\(\s*previousWaterType\s*\)\s*;\s*"
         r"nextLiquidSurfaceSoundTime\s*=\s*0\s*;\s*"
-        r"if\s*\(\s*savefile->HasOpenQ4PlayerLiquidSaveFields\s*\(\s*\)\s*\)\s*\{\s*"
+        r"if\s*\(\s*savefile->HasOpenQ4PlayerLiquidSoundSaveField\s*\(\s*\)\s*\)\s*\{\s*"
         r"savefile->ReadInt\s*\(\s*nextLiquidSurfaceSoundTime\s*\)\s*;\s*\}\s*"
         r"savefile->ReadInt\s*\(\s*nextLiquidDamageTime\s*\)",
         f"{tree} conditional liquid-surface sound restore layout",
