@@ -1079,6 +1079,7 @@ public:
 	void					ServerSendInstanceReliableMessageExcluding( const idEntity* owner, int excludeClient, const idBitMsg& msg );
 	void					ServerSendInstanceReliableMessage( const idEntity* owner, int clientNum, const idBitMsg& msg );	
 
+	void					QueueUnreliableMessage( int clientNum, const idBitMsg &msg );
 	void					SendUnreliableMessage( const idBitMsg &msg, const int clientNum );
 	// note: local client on dedicated server is always excluded
 	void					SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1 = -1, int area2 = -1 );

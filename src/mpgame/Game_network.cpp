@@ -3200,6 +3200,17 @@ gameReturn_t idGameLocal::ClientPrediction( int clientNum, const usercmd_t *clie
 
 		// service any pending events
 		idEvent::ServiceEvents();
+
+		// openQ4: replicated entity events are otherwise only drained at the end of
+		// ClientReadSnapshot, so anything still queued because its server timestamp
+		// had not been reached yet waits a whole snapshot interval - 50ms at the
+		// default net_serverSnapshotDelay - before it fires.  That is a client behind
+		// the server, which is exactly when its combat feedback is already thin.  The
+		// queue is time ordered and the drain stops at the first event in the future,
+		// so running it again here only ever releases events whose time has come.
+		if ( isNewFrame ) {
+			ClientProcessEntityNetworkEventQueue();
+		}
 	}
 
 	if ( isNewFrame && lastPredictFrame ) {
@@ -3997,6 +4008,48 @@ void idGameLocal::RepeaterUnreliableMessage( const idBitMsg &msg, const int clie
 	}
 }
 
+// Ceiling on how much unreliable traffic one client's batch may hold between
+// snapshots.  idGameLocal::WriteSnapshot pours the whole batch into the snapshot
+// message, which is MAX_MESSAGE_SIZE and does NOT allow overflow, so an
+// unbounded batch could take the server down with a fatal idBitMsg overflow just
+// as the fight got busy.  The batch only grows when snapshots have stopped going
+// out, and at 20 snapshots a second this cap is 80KB/s of effect traffic - far
+// above net_serverMaxClientRate, so it can never bind before the rate limiter
+// does.  It exists to make the failure a logged drop instead of a crash.
+static const int MAX_UNRELIABLE_BATCH_BYTES = 4096;
+// Per-client throttle so a full batch reports once rather than once per message.
+static const int UNRELIABLE_OVERFLOW_WARN_INTERVAL = 5000;
+static int unreliableOverflowWarnTime[ MAX_CLIENTS + 1 ] = { 0 };
+
+/*
+===============
+idGameLocal::QueueUnreliableMessage
+
+Appends to one client's unreliable batch, which is drained into that client's
+next snapshot.  The batch is a fixed ring; when it fills the message is simply
+gone, and until now it went silently.  That is exactly the case worth hearing
+about, because everything queued here is combat feedback - hit scans, impact
+effects, hit info - and the batch only fills when snapshots have stopped going
+out, which is when a player is most likely to notice things missing.
+===============
+*/
+void idGameLocal::QueueUnreliableMessage( int clientNum, const idBitMsg &msg ) {
+	if ( clientNum < 0 || clientNum > MAX_CLIENTS ) {
+		return;
+	}
+	idMsgQueue &batch = unreliableMessages[ clientNum ];
+	if ( batch.GetTotalSize() + msg.GetSize() <= MAX_UNRELIABLE_BATCH_BYTES &&
+		 batch.Add( msg.GetData(), msg.GetSize(), false ) ) {
+		return;
+	}
+	if ( time >= unreliableOverflowWarnTime[ clientNum ] ) {
+		unreliableOverflowWarnTime[ clientNum ] = time + UNRELIABLE_OVERFLOW_WARN_INTERVAL;
+		common->Warning( "client %d: unreliable batch full (%d bytes), dropping a %d byte message - "
+						 "snapshots are not draining it",
+						 clientNum, batch.GetTotalSize(), msg.GetSize() );
+	}
+}
+
 /*
 ===============
 idGameLocal::SendUnreliableMessage
@@ -4024,7 +4077,7 @@ void idGameLocal::SendUnreliableMessage( const idBitMsg &msg, const int clientNu
 				continue;
 			}
 		}
-		unreliableMessages[ icl ].Add( msg.GetData(), msg.GetSize(), false );
+		QueueUnreliableMessage( icl, msg );
 	}
 
 	if ( demoState == DEMO_RECORDING || isRepeater ) {
@@ -4135,7 +4188,7 @@ void idGameLocal::SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity 
 			}
 		}
 
-		unreliableMessages[ icl ].Add( msg.GetData(), msg.GetSize(), false );
+		QueueUnreliableMessage( icl, msg );
 	}
 
 	if ( demoState == DEMO_RECORDING || isRepeater ) {
