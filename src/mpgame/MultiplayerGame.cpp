@@ -54,8 +54,13 @@ static const int ARENA_INTRO_ARM_TIMEOUT_MSEC = 4000;
 static const float ARENA_DOF_EFFECT_RANGE = 4.0f;
 static const float ARENA_DOF_DISTANCE_SCALE = 512.0f;
 // The join screen softens the whole map rather than picking out a subject, so
-// it keeps the arena falloff but focuses on the near plane.
-static const float JOIN_SCREEN_DOF_EFFECT_RANGE = 4.0f;
+// it focuses just past the near plane and reaches full blur within a room's
+// depth.  Range is the controller's own unit; the backends convert it the same
+// way, so 0.2 is about 13 world units past the focus point - short enough that
+// a whole room is out of focus rather than only its far wall.
+static const float JOIN_SCREEN_DOF_EFFECT_RANGE = 0.2f;
+static const float JOIN_SCREEN_DOF_FOCUS = 0.004f;
+static const float JOIN_SCREEN_DOF_STRENGTH = 0.85f;
 static const float JOIN_SCREEN_DOF_DISTANCE_SCALE = 512.0f;
 
 // Item timing is intentionally a strict semantic allowlist.  Entity names,
@@ -14812,16 +14817,18 @@ void idMultiplayerGame::SetJoinScreenSoftFocus( bool enabled ) {
 		return;
 	}
 
-	// Parm 5 is the focus depth and parm 4 the falloff range: focusing on the
-	// near plane leaves the whole map softened rather than picking out a
-	// subject.  Parm 6 stays at zero so the med-labs colour pulse never runs.
+	// Parms 0-3 are the colour the blur tints towards; a zero alpha asks for no
+	// tint at all.  Parm 5 focuses just past the near plane and parm 4 reaches
+	// full blur within a room's depth, so the whole map softens rather than a
+	// subject being picked out.  Parm 6 is the effect strength - leaving it at
+	// zero asks for no effect, which is exactly what Vulkan draws.
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 0, 0.0f );
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 1, 0.0f );
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 2, 0.0f );
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 3, 0.0f );
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 4, JOIN_SCREEN_DOF_EFFECT_RANGE );
-	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 5, 0.0f );
-	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 6, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 5, JOIN_SCREEN_DOF_FOCUS );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 6, JOIN_SCREEN_DOF_STRENGTH );
 	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 7, JOIN_SCREEN_DOF_DISTANCE_SCALE );
 	renderSystem->SetSpecialEffect( SPECIAL_EFFECT_BLUR, true );
 	joinScreenSoftFocusEnabled = true;
