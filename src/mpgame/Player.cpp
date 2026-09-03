@@ -9280,6 +9280,7 @@ void idPlayer::Spectate( bool spectate, bool force ) {
 
 	// don't do any smoothing with this snapshot
 	predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
  
  	if ( gameLocal.isServer ) {
  		msg.Init( msgBuf, sizeof( msgBuf ) );
@@ -11966,6 +11967,7 @@ void idPlayer::Teleport( const idVec3 &origin, const idAngles &angles, idEntity 
 
 	// don't do any smoothing with this snapshot
 	predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
 
 	UpdateVisuals();
 
@@ -13844,6 +13846,38 @@ void idPlayer::LocalClientPredictionThink( void ) {
 
 /*
 ===============
+idPlayer::AllowsFullRemotePrediction
+
+Whether this remote player may be re-simulated on the engine's replay passes rather than only
+on the leading one.
+
+The server relays each in-PVS client's REAL usercmds for the first net_serverMaxUsercmdRelay
+tics and idAsyncNetwork::DuplicateUsercmd holds the last one after that, so the commands to
+re-simulate with are already on hand - the engine files them per frame index and hands one over
+per replay pass.
+
+The tic budget exists because idAsyncClient clamps its game time to net_clientMaxPrediction,
+which is 1000 ms - 62 tics.  One post-stall recovery frame would otherwise hand over 62 replay
+tics for every visible player at once.
+===============
+*/
+bool idPlayer::AllowsFullRemotePrediction( void ) const {
+	if ( !gameLocal.isMultiplayer || !gameLocal.isClient ) {
+		return false;
+	}
+	if ( !net_mpPredictMode.GetBool() ) {
+		return false;
+	}
+	// A corpse, a ragdoll, a spectator and a vehicle occupant are all driven by something other
+	// than plain player movement, so re-running Move() for them predicts nothing.
+	if ( health <= 0 || IsActiveAF() || spectating || IsInVehicle() ) {
+		return false;
+	}
+	return remotePredictedTics < net_mpPredictMaxFrames.GetInteger();
+}
+
+/*
+===============
 idPlayer::NonLocalClientPredictionThink
 ===============
 */
@@ -13929,9 +13963,25 @@ void idPlayer::NonLocalClientPredictionThink( void ) {
 	if ( !isLagged ) {
  		// don't allow client to move when lagged
 		predictedUpdated = false;
-		// NOTE: only running on new frames causes prediction errors even when the input does not change!
+		// Raven ran this only on the leading pass, with the note "only running on new frames
+		// causes prediction errors even when the input does not change!".  They were right: it
+		// leaves a remote a whole client lead behind the server.  See
+		// AllowsFullRemotePrediction.
+		//
+		// Re-simulating a tic is safe because one-shots are gated at the SINK, not at the caller -
+		// idEntity::StartSound, StartSoundShader, both PlayEffect overloads, StopSound, Present and
+		// ServerSendEvent all early-out on !gameLocal.isNewFrame - and every tic is the leading
+		// pass of exactly one chain, because idGameLocal::ClientPrediction takes isNewFrame from a
+		// monotonic high-water mark.  So a transition fires once, on its leading pass, and is
+		// swallowed on every re-simulation of that same tic.
+		//
+		// MAINTENANCE: any future per-tic side effect added to Move() that is NOT routed through
+		// those sinks will run once per replay pass.
 		if ( gameLocal.isNewFrame ) {
  			Move();
+		} else if ( AllowsFullRemotePrediction() ) {
+			remotePredictedTics++;
+			Move();
 		} else {
 			PredictionErrorDecay();
 		}
@@ -14114,6 +14164,7 @@ void idPlayer::PredictionErrorDecay( void ) {
 				predictedOrigin = renderOrigin;
 				predictedAngles = viewAngles;
 				predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
 				return;
 			}
 
@@ -14135,6 +14186,7 @@ void idPlayer::PredictionErrorDecay( void ) {
 		}
 
 		predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
 
 	}
 
@@ -14340,7 +14392,17 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	}
 
 	lastSnapshotSequence = snapshotSequence;
+	// A snapshot begins a new replay chain, so the re-simulation budget starts over.  It is
+	// also the only point at which the client's prediction for a frame can be compared with
+	// the server's authoritative state for that same frame.
+	if ( net_mpPredictDebug.GetInteger() > 0 && gameLocal.isClient &&
+		 entityNumber != gameLocal.localClientNum && !spectating && health > 0 ) {
+		const float predictionError = ( physicsObj.GetOrigin() - decodedPhysics.origin ).Length();
+		gameLocal.Printf( "MPPredict: client=%d mode=%d tics=%d errorUnits=%.2f\n",
+			entityNumber, net_mpPredictMode.GetInteger(), remotePredictedTics, predictionError );
+	}
 	physicsObj.ApplySnapshotState( decodedPhysics );
+	remotePredictedTics = 0;
 	ApplyBindSnapshotInfo( decodedBindInfo );
 	deltaViewAngles = decodedDeltaViewAngles;
 	health = decodedHealth;
@@ -14354,6 +14416,7 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	if ( spectating && latchedSpectator != spectator ) {
 		// don't do any smoothing with this snapshot
 		predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
 		
 		if ( this == gameLocal.GetLocalPlayer() ) {
 			// this is where the client updates their spectated player
@@ -16088,6 +16151,7 @@ void idPlayer::ClientUnstale( void ) {
 
 	// don't do any smoothing with this snapshot
 	predictedFrame = gameLocal.framenum;
+	remotePredictedTics = 0;
 	// the powerup effects ( rvClientEntity ) will do some bindings, which in turn will call GetPosition
 	// which uses the predictedOrigin .. which won't be updated till we Think() so just don't leave the predictedOrigin to the old position
 	predictedOrigin = renderEntity.origin;

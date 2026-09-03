@@ -966,6 +966,9 @@ private:
 	int						lastDamageLocation;
 
 	int						predictedFrame;
+	// Extra replay tics this remote has already been re-simulated for in the current
+	// chain.  Client-only transient state; deliberately not saved.
+	int						remotePredictedTics;
 	idVec3					predictedOrigin;
 	idAngles				predictedAngles;
 	bool					predictedUpdated;
@@ -1059,6 +1062,7 @@ private:
 	bool					serverReceiveEvent;
 
 	bool					WantSmoothing( void ) const;
+	bool					AllowsFullRemotePrediction( void ) const;
 	void					PredictionErrorDecay( void );
 
 	bool					CanZoom(void);

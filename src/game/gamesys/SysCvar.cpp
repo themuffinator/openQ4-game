@@ -650,7 +650,10 @@ idCVar net_mpLagCompensation(		"net_mpLagCompensation",	"1",			CVAR_GAME | CVAR_
 idCVar net_mpLagCompMaxMS(			"net_mpLagCompMaxMS",		"200",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "maximum rewind window in milliseconds for multiplayer lag compensation", 0, 1000 );
 idCVar net_mpLagCompBiasMS(			"net_mpLagCompBiasMS",		"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "additional rewind bias in milliseconds applied to multiplayer lag compensation", -200, 200 );
 idCVar net_mpLagCompDebug(			"net_mpLagCompDebug",		"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "multiplayer lag compensation debug output (0=off, 1=summary, 2=verbose)", 0, 2, idCmdSystem::ArgCompletion_Integer<0,2> );
-idCVar net_mpPredictMode(			"net_mpPredictMode",		"1",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "multiplayer remote-client prediction mode (0=legacy limited, 1=enhanced per-frame)" , 0, 1, idCmdSystem::ArgCompletion_Integer<0,1> );
+// openQ4: this fork is game_sp and never runs multiplayer, so this declaration is dead.  The
+// live one is in src/mpgame/gamesys/SysCvar.cpp; the default is kept in step with it so the
+// two forks cannot be read as disagreeing.
+idCVar net_mpPredictMode(			"net_mpPredictMode",		"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "multiplayer remote-client prediction mode (0=legacy limited, 1=enhanced per-frame)" , 0, 1, idCmdSystem::ArgCompletion_Integer<0,1> );
 idCVar net_menulanserver(			"net_menulanserver",		"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "treat menu server list as LAN only" );
 idCVar net_serverMenuDedicated(	"net_serverMenuDedicated",	"0",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "menu dedicated server toggle" );
 
