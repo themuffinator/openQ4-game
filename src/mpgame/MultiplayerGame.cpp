@@ -53,6 +53,10 @@ static const int ARENA_INTRO_SUBJECT_MSEC = 1800;
 static const int ARENA_INTRO_ARM_TIMEOUT_MSEC = 4000;
 static const float ARENA_DOF_EFFECT_RANGE = 4.0f;
 static const float ARENA_DOF_DISTANCE_SCALE = 512.0f;
+// The join screen softens the whole map rather than picking out a subject, so
+// it keeps the arena falloff but focuses on the near plane.
+static const float JOIN_SCREEN_DOF_EFFECT_RANGE = 4.0f;
+static const float JOIN_SCREEN_DOF_DISTANCE_SCALE = 512.0f;
 
 // Item timing is intentionally a strict semantic allowlist.  Entity names,
 // map labels and inventory display strings are neither stable identifiers nor
@@ -574,6 +578,34 @@ static const char *ResolveScoreboardMapName( const char *mapPath, idStr &mapName
 	}
 
 	return mapNameOut.c_str();
+}
+
+/*
+================
+MPResolveMatchLimit
+
+The scoring limit a server actually enforces depends on the gametype, so both
+the compact join screen and the in-game Join tab read it from one place.
+Driven off the gametype flags rather than a hard-coded list, so a round or
+objective mode no longer advertises an irrelevant frag limit.
+================
+*/
+static void MPResolveMatchLimit( const char *&limitLabel, int &limitValue ) {
+	limitLabel = common->GetLocalizedString( "#str_107660" );
+	limitValue = gameLocal.serverInfo.GetInt( "si_fragLimit" );
+	if ( gameLocal.IsFlagGameType() ) {
+		limitLabel = common->GetLocalizedString( "#str_107661" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_captureLimit" );
+	} else if ( gameLocal.gameType == GAME_DEADZONE ) {
+		limitLabel = common->GetLocalizedString( "#str_122008" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_controlTime" );
+	} else if ( MPGameTypeHasAny( gameLocal.gameType, GTF_ROUNDLIMIT ) ) {
+		limitLabel = common->GetLocalizedString( "#str_41404" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_roundLimit" );
+	} else if ( MPGameTypeHasAny( gameLocal.gameType, GTF_SCORELIMIT ) ) {
+		limitLabel = common->GetLocalizedString( "#str_41403" );
+		limitValue = gameLocal.serverInfo.GetInt( "si_scoreLimit" );
+	}
 }
 
 static bool ResolveMatchControlParticipantText( void *callbackContext,
@@ -1172,6 +1204,8 @@ idMultiplayerGame::idMultiplayerGame() {
 	marineScoreBarPulseAmount = 0.0f;
 	stroggScoreBarPulseAmount = 0.0f;
 	arenaPresentationBlurEnabled = false;
+	joinScreenSoftFocusEnabled = false;
+	joinScreenPending = false;
 	arenaEntranceCameraResolved = false;
 	arenaEntranceCameraIsEntrance = false;
 	arenaVictorLookLatched = false;
@@ -9090,6 +9124,8 @@ void idMultiplayerGame::Clear() {
 	// resetting our ownership bit so an interrupted Arena handoff cannot leave
 	// the renderer's depth-of-field pass enabled on the next screen or map.
 	SetArenaCampaignDepthOfField( false );
+	SetJoinScreenSoftFocus( false );
+	joinScreenPending = false;
 		
 	pingUpdateTime = 0;
 	vote = VOTE_NONE;
@@ -9134,6 +9170,8 @@ void idMultiplayerGame::Clear() {
 	arenaPresentationVictor = -1;
 	arenaPresentationFocus = -1;
 	arenaPresentationBlurEnabled = false;
+	joinScreenSoftFocusEnabled = false;
+	joinScreenPending = false;
 	arenaEntranceCameraResolved = false;
 	arenaEntranceCameraIsEntrance = false;
 	arenaVictorLookLatched = false;
@@ -9236,6 +9274,8 @@ void idMultiplayerGame::ClearMap( void ) {
 	// MapClear runs after client entities may already have been deleted, so only
 	// touch renderer-owned presentation state here; GUI cleanup is not safe.
 	SetArenaCampaignDepthOfField( false );
+	SetJoinScreenSoftFocus( false );
+	joinScreenPending = false;
 	arenaPresentationVictor = -1;
 	arenaPresentationFocus = -1;
 	arenaEntranceCameraResolved = false;
@@ -14517,29 +14557,16 @@ void idMultiplayerGame::UpdateMainGui( void ) {
 	idStr mapName;
 	const int playerCount = NumActualClients( true );
 	const int maxPlayers = gameLocal.serverInfo.GetInt( "si_maxPlayers" );
-	const char *limitLabel = common->GetLocalizedString( "#str_107660" );
-	int limitValue = gameLocal.serverInfo.GetInt( "si_fragLimit" );
-	// openQ4: driven off the gametype flags rather than a hard-coded list, so a
-	// round or objective mode no longer advertises an irrelevant frag limit.
-	if ( gameLocal.IsFlagGameType() ) {
-		limitLabel = common->GetLocalizedString( "#str_107661" );
-		limitValue = gameLocal.serverInfo.GetInt( "si_captureLimit" );
-	} else if ( gameLocal.gameType == GAME_DEADZONE ) {
-		limitLabel = common->GetLocalizedString( "#str_122008" );
-		limitValue = gameLocal.serverInfo.GetInt( "si_controlTime" );
-	} else if ( MPGameTypeHasAny( gameLocal.gameType, GTF_ROUNDLIMIT ) ) {
-		limitLabel = common->GetLocalizedString( "#str_41404" );
-		limitValue = gameLocal.serverInfo.GetInt( "si_roundLimit" );
-	} else if ( MPGameTypeHasAny( gameLocal.gameType, GTF_SCORELIMIT ) ) {
-		limitLabel = common->GetLocalizedString( "#str_41403" );
-		limitValue = gameLocal.serverInfo.GetInt( "si_scoreLimit" );
-	}
+	const char *limitLabel = NULL;
+	int limitValue = 0;
+	MPResolveMatchLimit( limitLabel, limitValue );
 	mainGui->SetStateString( "join_server_line_0", va( "%s:\t%s", common->GetLocalizedString( "#str_107725" ), gameLocal.serverInfo.GetString( "si_name" ) ) );
 	mainGui->SetStateString( "join_server_line_1", va( "%s:\t%s", common->GetLocalizedString( "#str_107726" ), serverAddress.c_str() ) );
 	mainGui->SetStateString( "join_server_line_2", va( "%s:\t%s", common->GetLocalizedString( "#str_107727" ), LocalizeGametype() ) );
 	mainGui->SetStateString( "join_server_line_3", va( "%s\t%s", common->GetLocalizedString( "#str_107730" ), ResolveScoreboardMapName( gameLocal.serverInfo.GetString( "si_map" ), mapName ) ) );
 	mainGui->SetStateString( "join_server_line_4", va( "%s:\t%d/%d", common->GetLocalizedString( "#str_107663" ), playerCount, maxPlayers ) );
 	mainGui->SetStateString( "join_server_line_5", va( "%s:\t%d", limitLabel, limitValue ) );
+	UpdateJoinScreenGui();
 	RefreshLocalClientMatchView();
 	if ( ( clientMatchViewValid && clientMatchControlModel.IsReady() &&
 			clientMatchMenuProjectedViewRevision !=
@@ -14688,6 +14715,120 @@ void idMultiplayerGame::SetupBuyMenuItems()
 
 /*
 ================
+idMultiplayerGame::UpdateJoinScreenGui
+
+Feeds the compact connect-time join panel.  It carries only what a player has
+to know before picking a side - what is being played and where, how full the
+server is, what the match is scoring and whether it has started yet - instead
+of the full server dump the in-game Join tab still lists.
+================
+*/
+void idMultiplayerGame::UpdateJoinScreenGui( void ) {
+	if ( mainGui == NULL ) {
+		return;
+	}
+
+	idStr mapName;
+	const char *resolvedMap =
+		ResolveScoreboardMapName( gameLocal.serverInfo.GetString( "si_map" ), mapName );
+	mainGui->SetStateString( "join_match_title",
+		va( "%s - %s", LocalizeGametype(), resolvedMap ) );
+	mainGui->SetStateString( "join_match_server",
+		gameLocal.serverInfo.GetString( "si_name" ) );
+	mainGui->SetStateString( "join_match_players",
+		va( common->GetLocalizedString( "#str_42810" ),
+			NumActualClients( true ), gameLocal.serverInfo.GetInt( "si_maxPlayers" ) ) );
+
+	const char *limitLabel = NULL;
+	int limitValue = 0;
+	MPResolveMatchLimit( limitLabel, limitValue );
+	mainGui->SetStateString( "join_match_limit", va( "%s: %d", limitLabel, limitValue ) );
+
+	const char *stateToken = "#str_42816";
+	switch ( gameState->GetMPGameState() ) {
+		case WARMUP:
+			stateToken = "#str_42811";
+			break;
+		case COUNTDOWN:
+			stateToken = "#str_42812";
+			break;
+		case GAMEON:
+			stateToken = "#str_42813";
+			break;
+		case SUDDENDEATH:
+			stateToken = "#str_42814";
+			break;
+		case GAMEREVIEW:
+		case NEXTGAME:
+			stateToken = "#str_42815";
+			break;
+		default:
+			break;
+	}
+	mainGui->SetStateString( "join_match_state", common->GetLocalizedString( stateToken ) );
+
+	// The panel picks its button set from these, so the GUI never has to carry
+	// its own copy of the gametype table.
+	mainGui->SetStateBool( "join_team_mode", gameLocal.IsTeamGame() );
+	mainGui->SetStateBool( "join_tourney_mode", gameLocal.gameType == GAME_TOURNEY );
+	if ( gameLocal.gameType == GAME_TOURNEY ) {
+		if ( !idStr::Icmp( cvarSystem->GetCVarString( "ui_spectate" ), "Spectate" ) ) {
+			mainGui->SetStateString( "toggleTourneyButton",
+				common->GetLocalizedString( "#str_107699" ) );
+		} else {
+			mainGui->SetStateString( "toggleTourneyButton",
+				common->GetLocalizedString( "#str_107700" ) );
+		}
+	}
+}
+
+/*
+================
+idMultiplayerGame::SetJoinScreenSoftFocus
+
+The join panel only covers part of the screen, so the live map behind it is
+pushed out of focus with Raven's special-effect blur - the same controller the
+arena presentation uses.  Renderers that cannot provide the pass ignore it and
+the panel simply sits over a sharp view.
+================
+*/
+void idMultiplayerGame::SetJoinScreenSoftFocus( bool enabled ) {
+	if ( renderSystem == NULL ) {
+		joinScreenSoftFocusEnabled = false;
+		return;
+	}
+
+	if ( !enabled ) {
+		// The arena presentation owns the same effect slot; never cancel its
+		// depth of field on the way out of the join screen.
+		if ( joinScreenSoftFocusEnabled && !arenaPresentationBlurEnabled ) {
+			renderSystem->SetSpecialEffect( SPECIAL_EFFECT_BLUR, false );
+		}
+		joinScreenSoftFocusEnabled = false;
+		return;
+	}
+
+	if ( arenaPresentationBlurEnabled ) {
+		return;
+	}
+
+	// Parm 5 is the focus depth and parm 4 the falloff range: focusing on the
+	// near plane leaves the whole map softened rather than picking out a
+	// subject.  Parm 6 stays at zero so the med-labs colour pulse never runs.
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 0, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 1, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 2, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 3, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 4, JOIN_SCREEN_DOF_EFFECT_RANGE );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 5, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 6, 0.0f );
+	renderSystem->SetSpecialEffectParm( SPECIAL_EFFECT_BLUR, 7, JOIN_SCREEN_DOF_DISTANCE_SCALE );
+	renderSystem->SetSpecialEffect( SPECIAL_EFFECT_BLUR, true );
+	joinScreenSoftFocusEnabled = true;
+}
+
+/*
+================
 idMultiplayerGame::ShowInitialJoinMenu
 ================
 */
@@ -14697,7 +14838,7 @@ void idMultiplayerGame::ShowInitialJoinMenu( void ) {
 	}
 
 	cvarSystem->SetCVarBool( "ui_joined", false );
-	mainGui->SetStateBool( "initial_join", true );
+	joinScreenPending = true;
 	nextMenu = 1;
 	gameLocal.sessionCommand = "game_startmenu";
 }
@@ -14730,6 +14871,7 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 	if ( currentMenu ) {
 		currentMenu = 0;
  		cvarSystem->SetCVarBool( "ui_chat", false );
+		SetJoinScreenSoftFocus( false );
 	} else {
 		if ( nextMenu >= 2 ) {
 			currentMenu = nextMenu;
@@ -14750,6 +14892,9 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 		// view is unchanged.  Force one projection, then UpdateMainGui can reuse
 		// that revision until a view/result/error/selection handler invalidates it.
 		clientMatchMenuProjectedViewRevision = 0;
+		// Published before UpdateMainGui so its StateChanged reaches the GUI's
+		// registers before onActivate reads them.
+		mainGui->SetStateBool( "initial_join", joinScreenPending );
 		UpdateMainGui();
 
 		// UpdateMainGui sets most things, but it doesn't set these because
@@ -14785,9 +14930,9 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 
 		mainGui->SetStateString( "chattext", "" );
 		mainGui->Activate( true, gameLocal.time );
-		if ( mainGui->State().GetBool( "initial_join" ) ) {
+		if ( joinScreenPending ) {
 			mainGui->HandleNamedEvent( "initialJoin" );
-			mainGui->SetStateBool( "initial_join", false );
+			SetJoinScreenSoftFocus( true );
 		}
 
 		mainGui->SetStateInt( "appearance_tab", MP_MENU_APPEARANCE_SELF );
@@ -14893,7 +15038,12 @@ void idMultiplayerGame::DisableMenu( void ) {
 	pendingRefereeChallengeValid = false;
 	if ( mainGui != NULL ) {
 		mainGui->SetStateString( "match_referee_credential", "" );
+		mainGui->SetStateBool( "initial_join", false );
 	}
+	// Closing the menu is the player answering the join offer, whether they
+	// picked a side, chose to spectate or backed out of it.
+	joinScreenPending = false;
+	SetJoinScreenSoftFocus( false );
 	if ( currentMenu == 1 ) {
 		mainGui->Activate( false, gameLocal.time );
 	} else if ( currentMenu == 2 ) {

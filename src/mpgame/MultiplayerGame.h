@@ -371,6 +371,8 @@ public:
 
 	idUserInterface*	StartMenu( void );
 	void			ShowInitialJoinMenu( void );
+	void			UpdateJoinScreenGui( void );
+	void			SetJoinScreenSoftFocus( bool enabled );
 
 	const char*		HandleGuiCommands( const char *menuCommand );
 
@@ -1105,6 +1107,15 @@ private:
 	int				arenaPresentationVictor;
 	int				arenaPresentationFocus;
 	bool			arenaPresentationBlurEnabled;
+	// The connect-time join screen is a compact panel drawn over a live view of
+	// the map, so it borrows the same Raven special-effect blur the arena
+	// presentation uses and holds it for as long as that panel is up.
+	bool			joinScreenSoftFocusEnabled;
+	// True from the moment a connect-time join is offered until the player
+	// answers it.  The menu can legitimately be opened more than once before
+	// that happens - a listen-server host is offered the screen again after its
+	// own player entity respawns - so this cannot be a one-shot GUI state bit.
+	bool			joinScreenPending;
 	bool			arenaEntranceCameraResolved;
 	// Which presentation the latched camera belongs to.  The entrance and the
 	// final tableau both latch a collision-safe anchor, but they resolve it
