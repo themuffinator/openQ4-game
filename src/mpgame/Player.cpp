@@ -11935,6 +11935,12 @@ idPlayer::Teleport
 ============
 */
 void idPlayer::Teleport( const idVec3 &origin, const idAngles &angles, idEntity *destination ) {
+	// A teleport is a discontinuity, so every position lag compensation recorded for this
+	// player is now a lie about where they could have been shot.  Teleport does not route
+	// through SpawnToPoint, which was the only invalidation site.
+	if ( gameLocal.isServer && gameLocal.isMultiplayer ) {
+		gameLocal.InvalidateMPLagCompensationHistory( entityNumber );
+	}
  	idVec3 org;
  
  	if ( weapon ) {

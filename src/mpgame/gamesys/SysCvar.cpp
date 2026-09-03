@@ -808,6 +808,10 @@ idCVar net_mpPredictDebug(					"net_mpPredictDebug",			"0",			CVAR_GAME | CVAR_I
 idCVar net_mpLagCompensation(				"net_mpLagCompensation",			"0",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "enable server-side multiplayer lag compensation for hitscan traces" );
 idCVar net_mpLagCompMaxMS(					"net_mpLagCompMaxMS",				"200",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "maximum rewind window in milliseconds for multiplayer lag compensation", 0, 1000 );
 idCVar net_mpLagCompBiasMS(					"net_mpLagCompBiasMS",				"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "additional rewind bias in milliseconds applied to multiplayer lag compensation", -200, 200 );
+// How much further back than the measured round trip a rewind may reach.  The shooter's own
+// claim is what the rewind follows; this is only the ceiling that keeps a client which
+// misreports, or which delays its ping replies, from choosing its own rewind.
+idCVar net_mpLagCompSlackMS(				"net_mpLagCompSlackMS",				"48",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "how far past the measured round trip a lag-compensation rewind may reach", 0, 200 );
 idCVar net_mpLagCompDebug(					"net_mpLagCompDebug",				"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "multiplayer lag compensation debug output (0=off, 1=summary, 2=verbose)", 0, 2, idCmdSystem::ArgCompletion_Integer<0,2> );
 
 // Multiplayer bots.  Navigation is generated at map load from the collision

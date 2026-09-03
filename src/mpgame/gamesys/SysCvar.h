@@ -510,6 +510,7 @@ extern idCVar net_mpPredictDebug;
 extern idCVar net_mpLagCompensation;
 extern idCVar net_mpLagCompMaxMS;
 extern idCVar net_mpLagCompBiasMS;
+extern idCVar net_mpLagCompSlackMS;
 extern idCVar net_mpLagCompDebug;
 
 extern idCVar bot_enable;

@@ -1403,6 +1403,8 @@ public:
 	bool					ComputeMPLagCompensationRewind( const idPlayer *shooter, int &rewindMS ) const;
 	bool					BeginMPLagCompensation( const idPlayer *shooter, mpLagCompRestore_t restoreState[MAX_CLIENTS], int &restoreCount );
 	void					EndMPLagCompensation( mpLagCompRestore_t restoreState[MAX_CLIENTS], int restoreCount );
+	bool					ResolveMPLagCompensationHit( const idEntity *hit, mpLagCompRestore_t restoreState[MAX_CLIENTS], int &restoreCount, trace_t &tr, idVec3 *extraPoint );
+	int						RemoteExtrapolationMS( void ) const;
 
 	void					LoadBanList();
 	void					SaveBanList();
