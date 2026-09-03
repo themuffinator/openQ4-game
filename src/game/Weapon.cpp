@@ -2585,10 +2585,29 @@ void rvWeapon::MuzzleFlash ( void ) {
 	renderLight_t& light	  = lights[WPLIGHT_MUZZLEFLASH];
 	renderLight_t& lightWorld = lights[WPLIGHT_MUZZLEFLASH_WORLD];
 
-	if ( !g_muzzleFlash.GetBool() || flashJointView == INVALID_JOINT || !light.lightRadius[0] ) {
+	if ( !g_muzzleFlash.GetBool() ) {
 		return;
 	}
 	if ( g_perfTest_weaponNoFX.GetBool() ) {
+		return;
+	}
+
+// openQ4 BEGIN
+	// Classic Quake II/III muzzle flash: a short, wide world dlight at the
+	// barrel rather than a second view light.  It is raised before the
+	// authored flash bails out below, so a weapon that carries no flash light
+	// of its own still lights the room when it fires.
+	{
+		idVec3 classicOrigin;
+		idMat3 classicAxis;
+		if ( !GetGlobalJointTransform( false, flashJointWorld, classicOrigin, classicAxis ) ) {
+			classicOrigin = playerViewOrigin + playerViewAxis[0] * 16.0f;
+		}
+		G_ClassicMuzzleFlash( spawnArgs, classicOrigin );
+	}
+// openQ4 END
+
+	if ( flashJointView == INVALID_JOINT || !light.lightRadius[0] ) {
 		return;
 	}
 

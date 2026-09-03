@@ -257,6 +257,8 @@ extern idRepeaterReliableMessageSender repeaterReliableSender;
 #include "Lagometer.h"
 #include "HitMarker.h"
 
+#include "ClassicLights.h"
+
 //============================================================================
 
 const int MAX_GAME_MESSAGE_SIZE		= 8192;

@@ -182,6 +182,8 @@ void gameDebugLogDamage( const char *source, idEntity *victim, idEntity *inflict
 
 #include "HitMarker.h"
 
+#include "ClassicLights.h"
+
 //============================================================================
 
 const int MAX_GAME_MESSAGE_SIZE		= 8192;

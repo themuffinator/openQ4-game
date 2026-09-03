@@ -158,6 +158,8 @@ idCVar g_corpseSink(				"g_corpseSink",				"0",			CVAR_GAME | PC_CVAR_ARCHIVE | 
 
 idCVar g_muzzleFlash(				"g_muzzleFlash",			"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "show muzzle flashes" );
 idCVar g_projectileLights(			"g_projectileLights",		"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "show dynamic lights on projectiles" );
+idCVar g_classicDynamicLights(	"g_classicDynamicLights",	"1",		CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "Quake II/III style dynamic lights on muzzle flashes, bright projectiles and explosions" );
+idCVar g_classicDynamicLightScale(	"g_classicDynamicLightScale",	"1",	CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT, "radius multiplier for the classic dynamic lights", 0.25f, 4.0f );
 idCVar g_doubleVision(				"g_doubleVision",			"1",			CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "show double vision when taking damage" );
 idCVar g_monsters(					"g_monsters",				"1",			CVAR_GAME | CVAR_BOOL, "" );
 idCVar g_decals(					"g_decals",					"1",			CVAR_GAME | PC_CVAR_ARCHIVE | CVAR_BOOL, "show decals such as bullet holes" );

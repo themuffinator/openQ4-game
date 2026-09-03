@@ -2710,6 +2710,10 @@ idGameLocal::MapClear
 // RAVEN BEGIN
 // ddynerman: multiple instances 
 void idGameLocal::MapClear( bool clearClients, int instance ) {
+
+	// openQ4: the classic dynamic light handles belong to the render world
+	// being torn down here.
+	G_FreeClassicLights();
 // RAVEN END
 	int i;
 
@@ -4743,6 +4747,10 @@ makes rendering and sound system calls
 ================
 */
 bool idGameLocal::Draw( int clientNum ) {
+
+	// openQ4: the classic dynamic lights are a client presentation layer, so
+	// fade and retire them on the render frame, before the view is built.
+	G_UpdateClassicLights();
 //	DisplayClipProfile( );
 //	ClearClipProfile( );
 

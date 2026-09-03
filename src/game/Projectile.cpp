@@ -298,7 +298,9 @@ void idProjectile::Create( idEntity* _owner, const idVec3 &start, const idVec3 &
 		renderLight.noShadows = !G_DynamicLightShadowsEnabled();
 // RAVEN END
 	}
-	else if ( gameLocal.isMultiplayer ) {
+	// openQ4: with no authored light, the classic layer decides whether this is
+	// a bright projectile and gives it an asset-matched dlight to carry.
+	else if ( !G_ClassicProjectileLight( spawnArgs, renderLight ) && gameLocal.isMultiplayer ) {
 		const char *className = spawnArgs.GetString( "classname", "" );
 		if ( !idStr::Icmpn( className, "projectile_rocket", 17 ) ) {
 			// MP rocket trail effects don't carry a light segment in stock assets.
@@ -1429,6 +1431,12 @@ idProjectile::PlayDetonateEffect
 ================
 */
 void idProjectile::PlayDetonateEffect( const idVec3& origin, const idMat3& axis ) {
+// openQ4 BEGIN
+	// Classic Quake II/III explosion dlight.  Nothing in the shipped Quake 4
+	// detonation effects flashes the room, so this is the whole of it.
+	G_ClassicExplosionFlash( spawnArgs, origin );
+// openQ4 END
+
 	if( physicsObj.HasGroundContacts() ) {
 		if ( spawnArgs.GetBool( "detonateTestGroundMaterial" ) ) {
 			trace_t tr;

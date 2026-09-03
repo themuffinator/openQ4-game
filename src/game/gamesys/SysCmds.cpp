@@ -3052,6 +3052,59 @@ static void Cmd_TestBoneFx_f( const idCmdArgs &args ) {
 
 /*
 ==================
+Cmd_TestClassicLight_f
+
+Raises the classic dynamic lights in front of the player so the muzzle flash and
+explosion flashes can be inspected and tuned without firing a shot.
+
+	testClassicLight [ muzzle | explosion ] [ def name ]
+==================
+*/
+static void Cmd_TestClassicLight_f( const idCmdArgs &args ) {
+	idPlayer *player = gameLocal.GetLocalPlayer();
+	if ( !player || !gameLocal.CheatsOk() ) {
+		return;
+	}
+
+	if ( !g_classicDynamicLights.GetBool() ) {
+		gameLocal.Printf( "g_classicDynamicLights is 0; nothing to show.\n" );
+		return;
+	}
+
+	idVec3 origin;
+	idMat3 axis;
+	player->GetViewPos( origin, axis );
+
+	const char *what = ( args.Argc() > 1 ) ? args.Argv( 1 ) : "";
+	const char *defName = ( args.Argc() > 2 ) ? args.Argv( 2 ) : NULL;
+	const bool wantMuzzle = !*what || !idStr::Icmp( what, "muzzle" );
+	const bool wantExplosion = !*what || !idStr::Icmp( what, "explosion" );
+
+	if ( wantMuzzle ) {
+		const char *weaponName = defName ? defName : "weapon_rocketlauncher";
+		const idDict *weaponDef = gameLocal.FindEntityDefDict( weaponName, false );
+		if ( !weaponDef ) {
+			gameLocal.Printf( "testClassicLight: no such weapon def '%s'\n", weaponName );
+		} else {
+			G_ClassicMuzzleFlash( *weaponDef, origin + axis[0] * 48.0f );
+			gameLocal.Printf( "testClassicLight: muzzle flash from '%s'\n", weaponName );
+		}
+	}
+
+	if ( wantExplosion ) {
+		const char *projectileName = defName ? defName : "projectile_rocket";
+		const idDict *projectileDef = gameLocal.FindEntityDefDict( projectileName, false );
+		if ( !projectileDef ) {
+			gameLocal.Printf( "testClassicLight: no such projectile def '%s'\n", projectileName );
+		} else {
+			G_ClassicExplosionFlash( *projectileDef, origin + axis[0] * 160.0f );
+			gameLocal.Printf( "testClassicLight: explosion flash from '%s'\n", projectileName );
+		}
+	}
+}
+
+/*
+==================
 Cmd_TestDamage_f
 ==================
 */
@@ -4157,6 +4210,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "testLight",				Cmd_TestLight_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests a light" );
 	cmdSystem->AddCommand( "testPointLight",		Cmd_TestPointLight_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"tests a point light" );
 	cmdSystem->AddCommand( "popLight",				Cmd_PopLight_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"removes the last created light" );
+	cmdSystem->AddCommand( "testClassicLight",	Cmd_TestClassicLight_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"raises the classic dynamic lights in front of the player" );
 	cmdSystem->AddCommand( "testDeath",				Cmd_TestDeath_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests death" );
 	cmdSystem->AddCommand( "testHitMarker",		Cmd_TestHitMarker_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"tests the crosshair hit marker" );
 	cmdSystem->AddCommand( "testSave",				Cmd_TestSave_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"writes out a test savegame" );

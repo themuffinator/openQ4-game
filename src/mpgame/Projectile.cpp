@@ -305,6 +305,13 @@ void idProjectile::Create( idEntity* _owner, const idVec3 &start, const idVec3 &
 		renderLight.noShadows = cvarSystem->GetCVarInteger("com_machineSpec") < 3;
 // RAVEN END
 	}
+// openQ4 BEGIN
+	// With no authored light, the classic layer decides whether this is a
+	// bright projectile and gives it an asset-matched dlight to carry.
+	else {
+		G_ClassicProjectileLight( spawnArgs, renderLight );
+	}
+// openQ4 END
 
 	spawnArgs.GetVector( "light_offset", "0 0 0", lightOffset );
 
@@ -1520,6 +1527,12 @@ idProjectile::PlayDetonateEffect
 ================
 */
 void idProjectile::PlayDetonateEffect( const idVec3& origin, const idMat3& axis, bool forceImpact ) {
+// openQ4 BEGIN
+	// Classic Quake II/III explosion dlight.  Nothing in the shipped Quake 4
+	// detonation effects flashes the room, so this is the whole of it.
+	G_ClassicExplosionFlash( spawnArgs, origin );
+// openQ4 END
+
 	if( physicsObj.HasGroundContacts() || ( forceImpact && predictedProjectiles ) ) {
 		if ( spawnArgs.GetBool( "detonateTestGroundMaterial" ) ) {
 			trace_t tr;

@@ -397,6 +397,11 @@ void idMoveable::Killed( idEntity *inflictor, idEntity *attacker, int damage, co
 		StartSound( "snd_explode", SND_CHANNEL_ANY );
 
 		StopAllEffects ( );
+// openQ4 BEGIN
+		// Classic Quake II/III explosion dlight; no shipped Quake 4 explosion
+		// effect flashes the room on its own.
+		G_ClassicWorldExplosionFlash( spawnArgs, GetPhysics()->GetOrigin() );
+// openQ4 END
 		gameLocal.PlayEffect ( gameLocal.GetEffect(spawnArgs, "fx_explode"), GetPhysics()->GetOrigin(), (-GetPhysics()->GetGravityNormal()).ToMat3(), false, vec3_origin, true );				
 	}
 
@@ -1139,6 +1144,11 @@ void idExplodingBarrel::ExplodingEffects( void ) {
 	}
 */
 	StopEffect ( "fx_burn" );
+// openQ4 BEGIN
+	// Classic Quake II/III explosion dlight; no shipped Quake 4 explosion
+	// effect flashes the room on its own.
+	G_ClassicWorldExplosionFlash( spawnArgs, GetPhysics()->GetOrigin() );
+// openQ4 END
 	gameLocal.PlayEffect ( gameLocal.GetEffect(spawnArgs, "fx_explode"), GetPhysics()->GetOrigin(), (-GetPhysics()->GetGravityNormal()).ToMat3(), false, vec3_origin, true );
 
 	gameLocal.ProjectDecal( GetPhysics()->GetOrigin(), GetPhysics()->GetGravity(), 128.0f, true, 96.0f, "textures/decals/genericdamage" );

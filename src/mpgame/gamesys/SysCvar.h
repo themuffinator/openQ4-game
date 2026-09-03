@@ -25,6 +25,8 @@ extern idCVar	g_mp_gravity;
 extern idCVar	g_skipFX;
 extern idCVar	g_skipParticles;
 extern idCVar	g_projectileLights;
+extern idCVar	g_classicDynamicLights;
+extern idCVar	g_classicDynamicLightScale;
 extern idCVar	g_doubleVision;
 extern idCVar	g_muzzleFlash;
 
