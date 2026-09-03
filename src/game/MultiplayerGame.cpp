@@ -6105,14 +6105,21 @@ void idMultiplayerGame::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		}
 	}
 
+	// openQ4: this block's wire layout depends only on the in-game bitmap the server
+	// just sent - idMultiplayerGame::WriteToSnapshot emits these fields for every
+	// in-game slot whether or not that slot has an entity.  Requiring
+	// gameLocal.entities[ i ] to be a spawned player here therefore rejected
+	// perfectly well formed snapshots.  A client only owns an entity for a slot once
+	// that player has been inside its PVS - idGameLocal::WriteSnapshot skips remote
+	// players outside it, so someone who enters the game across the map is in-game
+	// well before the client has ever heard of them - and it destroys the entity
+	// again on GAME_RELIABLE_MESSAGE_DELETE_ENT, which arrives on the reliable
+	// channel independently of the snapshot carrying the cleared bit.  Both windows
+	// are ordinary play, and the result was a hard "server sent malformed snapshot"
+	// disconnect.  Decode unconditionally; the entity is checked below, where it is
+	// actually dereferenced.
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
 		if ( decodedPlayerState[i].ingame ) {
-			ent = gameLocal.entities[ i ];
-			if ( ent == NULL || !ent->IsType( idPlayer::GetClassType() ) ) {
-				gameLocal.Warning( "ReadFromSnapshot: in-game slot %d is not a player", i );
-				msg.MarkReadOverflowed();
-				return;
-			}
 			decodedPlayerState[ i ].fragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
 			decodedPlayerState[ i ].teamFragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
 			if ( proto69 ) {
@@ -6162,8 +6169,9 @@ void idMultiplayerGame::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			playerState[ i ].deadZoneScore = decodedPlayerState[ i ].deadZoneScore;
 			playerState[ i ].wins = decodedPlayerState[ i ].wins;
 		}
-		if ( hasTourneyState[ i ] ) {
-			ent = gameLocal.entities[ i ];
+		ent = gameLocal.entities[ i ];
+		const bool haveLocalPlayerEntity = ent != NULL && ent->IsType( idPlayer::GetClassType() );
+		if ( hasTourneyState[ i ] && haveLocalPlayerEntity ) {
 			if ( decodedInstance[ i ] != ent->GetInstance() ) {
 				ent->SetInstance( decodedInstance[ i ] );
 				if ( gameLocal.GetLocalPlayer() && i != gameLocal.localClientNum ) {
