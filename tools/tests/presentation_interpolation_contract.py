@@ -118,6 +118,10 @@ def check_source_root(source_root: str) -> dict[str, str]:
     projectile_cpp = read(f"{source_root}/Projectile.cpp")
 
     require(game_local_h, "mutable int\t\t\tpresentationClockGameTime", f"{context} transient clock")
+    # The real-time anchor is advanced by a fractional number of milliseconds per
+    # tic (1000/Hz against the game's integer msec), so it cannot be an int.
+    require(game_local_h, "mutable double\t\tpresentationClockRealTime", f"{context} fractional real-time anchor")
+    require(game_local_h, "GetPresentationTicFraction", f"{context} shared tic fraction API")
     require(game_local_h, "presentationClockLastTime", f"{context} monotonic clock state")
     require(game_local_h, "GetPresentationInterpolationFraction", f"{context} interpolation API")
     require(game_local_h, "presentationSceneFraction", f"{context} frozen scene sample")
@@ -132,18 +136,39 @@ def check_source_root(source_root: str) -> dict[str, str]:
     require(clear, "presentationSceneFraction = -1.0f;", f"{context} scene fraction reset")
     require(clear, "presentationAnimationTime = -1;", f"{context} skeletal clock reset")
 
+    # The tic fraction owns the real-time anchor.  It must PREDICT the anchor one
+    # tic forward rather than re-sample Sys_Milliseconds() whenever `time` changes:
+    # the only observer of a new tic is a draw frame, which lands a different
+    # distance past the boundary every tic, so re-anchoring there stamps a fresh
+    # phase error onto every tic and everything drawn from the fraction picks up a
+    # 60 Hz sawtooth a whole render interval wide.  The observation is one-sided
+    # (a tic is seen late by scheduling noise, never early), so the correction is
+    # asymmetric: follow an early observation at once, creep towards a late one.
+    tic_fraction = function(
+        game_local_cpp,
+        "float idGameLocal::GetPresentationTicFraction( void ) const",
+        context,
+    )
+    require(tic_fraction, "common->GetUserCmdMsecFloat()", f"{context} usercmd cadence")
+    require(tic_fraction, "presentationClockRealTime +=", f"{context} predicted anchor")
+    require(tic_fraction, "PRESENTATION_CLOCK_MAX_LATE_CORRECTION_MSEC", f"{context} creeping late correction")
+    require(tic_fraction, "presentationClockRealTime = realTime;", f"{context} immediate early correction")
+    require(tic_fraction, "presentationClockGameTime != time", f"{context} simulation anchor")
+    require(tic_fraction, "time < presentationClockGameTime", f"{context} backward-time reset guard")
+    require(tic_fraction, "presentationClockLastTime = time;", f"{context} map-time clock reseed")
+    require(tic_fraction, "idMath::ClampFloat( 0.0f, 1.0f", f"{context} bounded fraction")
+    require(tic_fraction, ") / realTicMsec )", f"{context} fraction spans a real tic, not a game msec")
+    reject(tic_fraction, "/ ticMsec", f"{context} stale game-msec divisor")
+
     clock = function(
         game_local_cpp,
         "int idGameLocal::GetPresentationTimeMsec( void ) const",
         context,
     )
     require(clock, "GetDemoState() == DEMO_PLAYING || IsTimeDemo()", f"{context} demo clock bypass")
-    require(clock, "const int realTime = Sys_Milliseconds();", f"{context} exported clock source")
-    require(clock, "presentationClockGameTime != time", f"{context} simulation anchor")
+    require(clock, "GetPresentationTicFraction()", f"{context} single fraction source")
     require(clock, "const int maxOffset = Max( 0, GetMSec() );", f"{context} authoritative-tic clock bound")
     require(clock, "idMath::ClampInt( 0, maxOffset", f"{context} bounded clock offset")
-    require(clock, "time < presentationClockGameTime", f"{context} backward-time reset guard")
-    require(clock, "presentationClockLastTime = time;", f"{context} map-time clock reseed")
     require(clock, "presentationClockLastTime = Max( presentationClockLastTime, presentationTime );", f"{context} monotonic resume clock")
     require(clock, "return presentationClockLastTime;", f"{context} mapped clock")
     reject(clock, "return time + Max( 0, realTime - presentationClockRealTime );", f"{context} unbounded paused clock")
@@ -154,11 +179,16 @@ def check_source_root(source_root: str) -> dict[str, str]:
         "float idGameLocal::GetPresentationInterpolationFraction( void ) const",
         context,
     )
-    require(fraction, "common->GetUserCmdMsecFloat()", f"{context} usercmd cadence")
-    require(fraction, "idMath::ClampFloat( 0.0f, 1.0f", f"{context} bounded fraction")
     require(fraction, "bounded latency avoids extrapolating", f"{context} one-tic latency contract")
     require(fraction, "presentationSceneFraction >= 0.0f", f"{context} frozen draw fraction gate")
     require(fraction, "return presentationSceneFraction;", f"{context} shared draw fraction")
+    require(fraction, "return GetPresentationTicFraction();", f"{context} shared tic fraction")
+    require_before(
+        fraction,
+        "return presentationSceneFraction;",
+        "return GetPresentationTicFraction();",
+        f"{context} latched fraction wins over a fresh clock sample",
+    )
 
     axis = function(
         game_local_cpp,
@@ -244,7 +274,10 @@ def check_source_root(source_root: str) -> dict[str, str]:
     require(create_presentation, "Mem_Alloc16( numJoints * sizeof( presentationJoints[0] ), MA_ANIM )", f"{context} aligned animator scratch allocation")
     require(create_presentation, "presentationJointsValid = false;", f"{context} fresh presentation evaluation")
     reject(create_presentation, "if ( presentationJointsValid", f"{context} no validity-only pose reuse")
-    reject(create_presentation, "lastPresentation", f"{context} no time-only pose reuse")
+    # Guard the actual anti-pattern - a cache keyed on the requested presentation
+    # time - rather than the "lastPresentation" prefix, which also matches the
+    # lastPresentationJointMod* diagnostics this function legitimately writes.
+    reject(create_presentation, "lastPresentationTime", f"{context} no time-only pose reuse")
     require(create_presentation, "AFPoseJoints.Num() == 0", f"{context} AF rewind exclusion")
     require(create_presentation, "angularVelocity.GetStartTime() == 0", f"{context} angular joint-mod rewind exclusion")
     require(create_presentation, "if ( !canEvaluateAtPresentationTime )", f"{context} authoritative fallback gate")

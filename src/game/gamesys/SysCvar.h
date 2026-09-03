@@ -304,6 +304,7 @@ extern idCVar	pm_vehicleCameraMinDist;
 
 extern idCVar	g_showPlayerShadow;
 extern idCVar	g_showPresentationPose;
+extern idCVar	g_presentationClockCapture;
 extern idCVar	g_dynamicLightShadows;
 
 // gun flashlight / projectile light shadow gate (SysCvar.cpp)

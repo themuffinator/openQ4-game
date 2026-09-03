@@ -5200,6 +5200,8 @@ void idGameLocal::PreparePlayerSceneForRender( idPlayer *player ) {
 		ClearPresentationEntityPoses();
 	}
 
+	RecordPresentationClockSample();
+
 	if ( player->weaponViewModel.GetEntity() != NULL ) {
 		player->weaponViewModel->UpdatePresentationWeapon( player->CanShowWeaponViewmodel() );
 	}
@@ -9092,13 +9094,136 @@ int idGameLocal::GetSpawnId( const idEntity* ent ) const {
 	return PackEntitySpawnId( gameLocal.spawnIds[ ent->entityNumber ], ent->entityNumber );
 }
 
+// How far the presentation clock will chase the simulation before it gives up and
+// re-anchors outright: a map load, a restore, a hitch or a big client time warp
+// are all better served by a clean reseed than by creeping across the gap.
+static const int PRESENTATION_CLOCK_MAX_CATCHUP_TICS = 4;
+// Per-tic ceiling on correcting the anchor *later*.  Lateness is mostly the
+// draw-detection lag and must not be chased; genuine drift is still absorbed,
+// just over several tics.
+static const double PRESENTATION_CLOCK_MAX_LATE_CORRECTION_MSEC = 1.0;
+
+// A capture of the presentation clock's raw inputs.  The clock is a pure
+// function of the per-draw pair ( real time, gameLocal.time ), so a capture can
+// be replayed offline against any candidate implementation and the two compared
+// on identical frame timing.  Recorded rather than printed because printing per
+// draw frame changes the frame pacing that is being measured.
+static const int MAX_PRESENTATION_CLOCK_SAMPLES = 8192;
+struct presentationClockSample_t {
+	int		realTime;
+	int		gameTime;
+	float	fraction;
+};
+static presentationClockSample_t presentationClockCaptureSamples[ MAX_PRESENTATION_CLOCK_SAMPLES ];
+static int presentationClockCaptureCount = 0;
+static bool presentationClockCaptureDumped = false;
+
+/*
+================
+idGameLocal::RecordPresentationClockSample
+================
+*/
+void idGameLocal::RecordPresentationClockSample( void ) {
+	const int wanted = idMath::ClampInt( 0, MAX_PRESENTATION_CLOCK_SAMPLES,
+		g_presentationClockCapture.GetInteger() );
+	if ( wanted <= 0 ) {
+		presentationClockCaptureCount = 0;
+		presentationClockCaptureDumped = false;
+		return;
+	}
+	if ( presentationClockCaptureDumped || presentationSceneFraction < 0.0f ) {
+		return;
+	}
+
+	presentationClockSample_t &sample =
+		presentationClockCaptureSamples[ presentationClockCaptureCount++ ];
+	sample.realTime = Sys_Milliseconds();
+	sample.gameTime = time;
+	sample.fraction = presentationSceneFraction;
+	if ( presentationClockCaptureCount < wanted ) {
+		return;
+	}
+
+	presentationClockCaptureDumped = true;
+	Printf( "presentationClock: %d samples\n", presentationClockCaptureCount );
+	for ( int i = 0; i < presentationClockCaptureCount; i++ ) {
+		Printf( "presentationClockSample rt=%d t=%d f=%.4f\n",
+			presentationClockCaptureSamples[ i ].realTime,
+			presentationClockCaptureSamples[ i ].gameTime,
+			presentationClockCaptureSamples[ i ].fraction );
+	}
+	presentationClockCaptureCount = 0;
+}
+
+/*
+================
+idGameLocal::GetPresentationTicFraction
+
+How far real time has advanced into the current authoritative tic, in [0,1].
+The anchors are transient: map loads and restores reseed them instead of
+changing save-game or network state.
+
+The anchor is *predicted* forward one tic at a time; it is not re-sampled from
+the clock every time `time` changes.  Re-sampling looks right and is not.  The
+only code that ever observes a new tic is a draw frame, and a draw frame lands
+somewhere in [0, one render interval) after the boundary that produced the tic --
+a different lag every tic.  Re-anchoring there therefore injects a fresh phase
+error every tic, so everything drawn from this fraction carries a 60 Hz sawtooth
+whose amplitude is a whole render interval of motion.  It is worst at exactly the
+frame rates that put several draws inside one tic, which is why the view weapon
+visibly stuttered the faster the renderer ran.
+
+Predicting forward keeps the phase.  The observation is then used only to correct
+drift, and asymmetrically, because its error is one-sided: a tic can be seen late
+by scheduling noise but never early, so an observation earlier than the predicted
+boundary is real information about a faster clock and is followed at once, while
+lateness is corrected at a strict crawl.  The anchor settles on the minimum
+observed lag, which is the boundary itself.
+================
+*/
+float idGameLocal::GetPresentationTicFraction( void ) const {
+	// Real seconds per authoritative tic.  Distinct from GetMSec(), which is how
+	// much *game* time a tic adds -- an exact 1000/Hz against an integer 16 at
+	// 60Hz.  Dividing the elapsed real time by the game figure is what used to
+	// pin the fraction at 0.96 and snap the last 4% of every tic's motion.
+	const float realTicMsec = common->GetUserCmdMsecFloat();
+	if ( realTicMsec <= 0.0f ) {
+		return 1.0f;
+	}
+	const int gameTicMsec = Max( 1, GetMSec() );
+	const double realTime = static_cast<double>( Sys_Milliseconds() );
+	const double maxDrift = realTicMsec * PRESENTATION_CLOCK_MAX_CATCHUP_TICS;
+
+	const int gameDelta = time - presentationClockGameTime;
+	const bool resetClock = presentationClockGameTime < 0 ||
+		time < presentationClockGameTime ||
+		gameDelta > gameTicMsec * PRESENTATION_CLOCK_MAX_CATCHUP_TICS ||
+		realTime < presentationClockRealTime - realTicMsec ||
+		realTime > presentationClockRealTime + maxDrift;
+	if ( resetClock ) {
+		presentationClockGameTime = time;
+		presentationClockRealTime = realTime;
+		presentationClockLastTime = time;
+	} else if ( presentationClockGameTime != time ) {
+		presentationClockGameTime = time;
+		presentationClockRealTime += ( static_cast<double>( gameDelta ) / gameTicMsec ) * realTicMsec;
+		const double lateness = realTime - presentationClockRealTime;
+		if ( lateness < 0.0 ) {
+			presentationClockRealTime = realTime;
+		} else {
+			presentationClockRealTime += Min( lateness, PRESENTATION_CLOCK_MAX_LATE_CORRECTION_MSEC );
+		}
+	}
+
+	return idMath::ClampFloat( 0.0f, 1.0f,
+		static_cast<float>( ( realTime - presentationClockRealTime ) / realTicMsec ) );
+}
+
 /*
 ================
 idGameLocal::GetPresentationTimeMsec
 
 Maps the engine's presentation clock onto the current simulation snapshot.
-The anchors are transient: map loads and restores reseed them instead of
-changing save-game or network state.
 ================
 */
 int idGameLocal::GetPresentationTimeMsec( void ) const {
@@ -9106,18 +9231,9 @@ int idGameLocal::GetPresentationTimeMsec( void ) const {
 		return time;
 	}
 
-	const int realTime = Sys_Milliseconds();
 	const int maxOffset = Max( 0, GetMSec() );
-	const bool resetClock = presentationClockGameTime < 0 || time < presentationClockGameTime;
-	if ( resetClock ) {
-		presentationClockLastTime = time;
-	}
-	if ( resetClock || presentationClockGameTime != time || realTime < presentationClockRealTime ) {
-		presentationClockGameTime = time;
-		presentationClockRealTime = realTime;
-	}
-
-	const int presentationOffset = idMath::ClampInt( 0, maxOffset, realTime - presentationClockRealTime );
+	const int presentationOffset = idMath::ClampInt( 0, maxOffset,
+		idMath::Ftoi( GetPresentationTicFraction() * maxOffset ) );
 	const int presentationTime = time + presentationOffset;
 	presentationClockLastTime = Max( presentationClockLastTime, presentationTime );
 	return presentationClockLastTime;
@@ -9136,18 +9252,11 @@ float idGameLocal::GetPresentationInterpolationFraction( void ) const {
 	// A newly anchored tic starts at the previous authoritative pose and
 	// reaches the current pose over one usercmd interval.  That deliberate,
 	// bounded latency avoids extrapolating the camera through collisions.
-	const float ticMsec = common->GetUserCmdMsecFloat();
-	if ( ticMsec <= 0.0f ) {
-		return 1.0f;
-	}
-
 	if ( presentationSceneFraction >= 0.0f ) {
 		return presentationSceneFraction;
 	}
 
-	const int presentationOffset = GetPresentationTimeMsec() - time;
-	return idMath::ClampFloat( 0.0f, 1.0f,
-		static_cast<float>( presentationOffset ) / ticMsec );
+	return GetPresentationTicFraction();
 }
 
 /*
@@ -9278,7 +9387,10 @@ void idGameLocal::UpdatePresentationEntityPoses( void ) {
 				const int probeJoint = animator->NumJoints() > 4 ? 4 : 0;
 				haveDrawnJoint = animator->GetPresentationJointDiagnostic( probeJoint, drawnJoint );
 			}
-			Printf( "presentationFrame: f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f animT=%d drawn=%d %.3f %.3f %.3f\n",
+			// rt/t are the raw inputs the presentation clock is a function of, so a
+			// capture can be replayed offline against any candidate clock.
+			Printf( "presentationFrame: rt=%d t=%d f=%.3f rootYaw=%.3f (have=%d) jointMods=%d mod0Yaw=%.3f animT=%d drawn=%d %.3f %.3f %.3f\n",
+				Sys_Milliseconds(), time,
 				GetPresentationInterpolationFraction(),
 				haveRoot ? rootAxis.ToAngles().yaw : 0.0f,
 				haveRoot ? 1 : 0, jointModCount, jointModYaw,

@@ -299,6 +299,7 @@ extern idCVar	pm_vehicleCameraMinDist;
 
 extern idCVar	g_showPlayerShadow;
 extern idCVar	g_showPresentationPose;
+extern idCVar	g_presentationClockCapture;
 
 extern idCVar	g_skipPlayerShadowsMP;
 extern idCVar	g_skipItemShadowsMP;
