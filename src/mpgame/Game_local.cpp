@@ -8890,7 +8890,7 @@ a weapon keeps whatever fx_impact_water it already ships, and the shared liquid_
 for everything that specifies nothing.
 ================
 */
-void idGameLocal::PlayLiquidImpact( int liquidContents, const idVec3 &point, const idVec3 &normal, idEntity *ent, const idDict *callerArgs ) {
+void idGameLocal::PlayLiquidImpact( int liquidContents, const idVec3 &point, const idVec3 &normal, idEntity *ent, const idDict *callerArgs, bool broadcast ) {
 	if ( !liquidContents ) {
 		return;
 	}
@@ -8908,7 +8908,7 @@ void idGameLocal::PlayLiquidImpact( int liquidContents, const idVec3 &point, con
 		effect = GetEffect( *liquidDict, va( "fx_impact_%s", liquid ) );
 	}
 	if ( effect ) {
-		PlayEffect( effect, point, normal.ToMat3(), false, vec3_origin, true );
+		PlayEffect( effect, point, normal.ToMat3(), false, vec3_origin, broadcast );
 	}
 
 	// Stock weapon splash effects already carry their own sound. The shared openQ4 effects do not,
@@ -8918,7 +8918,7 @@ void idGameLocal::PlayLiquidImpact( int liquidContents, const idVec3 &point, con
 		if ( shaderName && shaderName[0] ) {
 			const idSoundShader *shader = declManager->FindSound( shaderName, false );
 			if ( shader ) {
-				ent->StartSoundShader( shader, SND_CHANNEL_ANY, 0, true, NULL );
+				ent->StartSoundShader( shader, SND_CHANNEL_ANY, 0, broadcast, NULL );
 			}
 		}
 	}
@@ -9691,7 +9691,9 @@ idEntity* idGameLocal::HitScan(
 				if ( !g_perfTest_weaponNoFX.GetBool() && !GetEffect( hitscanDict, "fx_impact", tr.c.materialType ) ) {
 					// the shooter's def says nothing about hitting this liquid, so fall back to the
 					// shared liquid presentation rather than splashing nothing at all
-					PlayLiquidImpact( hitLiquidContents, collisionPoint, tr.c.normal, ent, &hitscanDict );
+					// ClientHitScan replays this whole function on every client, so the splash
+					// is already produced locally there.  Broadcasting it as well plays it twice.
+					PlayLiquidImpact( hitLiquidContents, collisionPoint, tr.c.normal, ent, &hitscanDict, false );
 				}
 // openQ4 END
 
