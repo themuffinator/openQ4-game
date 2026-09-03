@@ -790,6 +790,21 @@ idCVar net_clientPredictWeaponSwitch(		"net_clientPredictWeaponSwitch",	"1",			C
 // the lead the client already applied.  Turning it on changes hit registration
 // for everybody on the server, so it stays an opt-in until it has been measured
 // against real ping distributions.
+// openQ4: a remote player's Move() is gated on gameLocal.isNewFrame below, so a client
+// integrates a remote exactly once per client frame while every snapshot hard-resets that
+// remote's physics.  Its simulated state therefore sits permanently about the client's own
+// lead behind the server - a positional error of order ping, at the crosshair.  Mode 1
+// re-simulates remote players on the engine's replay passes as well, using the usercmds the
+// server already relays.  NOT CVAR_NETWORKSYNC: it changes only what a client simulates
+// locally, and a server must not be able to force per-frame cost onto a client.
+// (src/game/gamesys/SysCvar.cpp carries a copy of this cvar; the single-player fork never
+// runs multiplayer, so THIS is the live declaration.)
+idCVar net_mpPredictMode(					"net_mpPredictMode",				"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "multiplayer remote-client prediction mode (0=legacy limited, 1=enhanced per-frame)", 0, 1, idCmdSystem::ArgCompletion_Integer<0,1> );
+// Ceiling on the extra replay tics one remote may be simulated for in a single chain.
+// net_clientMaxPrediction lets the engine hand over as many as 62 after a stall, for every
+// visible player at once.
+idCVar net_mpPredictMaxFrames(				"net_mpPredictMaxFrames",		"16",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "maximum extra replay tics a remote player may be re-simulated for per chain", 1, 64 );
+idCVar net_mpPredictDebug(					"net_mpPredictDebug",			"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "report how far a client's predicted remote-player position was from the server's for the same frame", 0, 1 );
 idCVar net_mpLagCompensation(				"net_mpLagCompensation",			"0",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "enable server-side multiplayer lag compensation for hitscan traces" );
 idCVar net_mpLagCompMaxMS(					"net_mpLagCompMaxMS",				"200",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "maximum rewind window in milliseconds for multiplayer lag compensation", 0, 1000 );
 idCVar net_mpLagCompBiasMS(					"net_mpLagCompBiasMS",				"0",			CVAR_GAME | CVAR_INTEGER | CVAR_NOCHEAT, "additional rewind bias in milliseconds applied to multiplayer lag compensation", -200, 200 );
